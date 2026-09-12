@@ -1,0 +1,19 @@
+{
+  "name": "ai-saver",
+  "version": "0.1.0",
+  "description": "AI_saver — 실제 사용 기록에서 낭비 습관을 찾아, 비싼 요청 전에 4지선다로 범위를 좁히고, 반복 작업을 /명령어로 승격한다. 계측·판정은 모델 호출 0회.",
+  "author": {
+    "name": "hanleem",
+    "url": "https://github.com/hanleem/AI_saver"
+  },
+  "keywords": [
+    "token",
+    "cost",
+    "efficiency",
+    "coach",
+    "hooks",
+    "skills"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/hanleem/AI_saver"
+}

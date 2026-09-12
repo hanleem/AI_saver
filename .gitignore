@@ -1,0 +1,19 @@
+# AI_saver 가 만드는 것은 전부 로컬에만 남습니다. 실수로도 올라가지 않게 막습니다.
+ledger/
+reports/
+profile.json
+usage-log/
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# 편집기·OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
