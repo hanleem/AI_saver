@@ -642,11 +642,13 @@ class PromotionTest(unittest.TestCase):
         self.assertNotIn("이런 상황", skill.description)
         self.assertIn("요약", skill.render())
 
-    def test_build_loop_rule_names_its_own_trigger_condition(self):
-        """The other half of the same ask: the skill's own instructions,
-        not just its description, should state the condition explicitly."""
+    def test_build_loop_rule_branches_by_task_size(self):
+        """Not a blanket 'run it exactly once': small fixes batch (~5) before
+        one check, but a big feature gets checked right after it's built --
+        the size-aware refinement the owner asked for over the flat rule."""
         skill = render_skill(["BUILD_LOOP"], {"BUILD_LOOP": 22})
-        self.assertTrue(any("이미 build나 test를 한 번 실행했다면" in rule for rule in skill.rules))
+        self.assertTrue(any("5개" in rule and "모아서" in rule for rule in skill.rules))
+        self.assertTrue(any("규모가 큰 기능" in rule and "직후" in rule for rule in skill.rules))
 
     def test_write_makes_a_real_autocompleting_file(self):
         root = Path(tempfile.mkdtemp())
