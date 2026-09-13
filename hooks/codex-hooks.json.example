@@ -1,0 +1,16 @@
+{
+  "description": "AI_saver — 실행 전 확인 (Codex CLI)",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"<AI_saver를 내려받은 경로>/hooks/codex_on_prompt.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

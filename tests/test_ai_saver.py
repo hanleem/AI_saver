@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -137,8 +139,10 @@ class GateTest(unittest.TestCase):
 
     def test_injected_context_stays_small(self):
         verdict = assess("전체적으로 확인해서 문제 있으면 다 고쳐줘", self.profile)
-        self.assertLess(len(verdict.as_context()), 700)
-        self.assertIn("AskUserQuestion", verdict.as_context())
+        context = verdict.as_context()
+        self.assertLess(len(context), 700)
+        self.assertNotIn("AskUserQuestion", context)  # Claude-only tool name; text must stay tool-agnostic
+        self.assertIn(verdict.recommended, context)
 
 
 def _turn(prompt_id: str, prompt: str, calls: list[ToolCall], cost_calls: int = 1) -> Turn:
@@ -219,6 +223,43 @@ class ProfileTest(unittest.TestCase):
         Profile(threshold=61, gate_enabled=True).save(root)
         loaded = Profile.load(root)
         self.assertEqual((loaded.threshold, loaded.gate_enabled), (61, True))
+
+
+class CodexHookTest(unittest.TestCase):
+    """The hook actually run by Codex CLI, invoked as a real subprocess --
+    the process boundary and the stdin/stdout contract are the point."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+        self.script = Path(__file__).resolve().parent.parent / "hooks" / "codex_on_prompt.py"
+        self.env = {**os.environ, "AI_SAVER_HOME": str(self.home), "PYTHONIOENCODING": "utf-8"}
+
+    def _run(self, payload: dict) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(self.script)],
+            input=json.dumps(payload), capture_output=True, text=True,
+            encoding="utf-8", env=self.env,
+        )
+
+    def test_shadow_mode_is_silent_but_still_records(self):
+        result = self._run({"prompt": "전체 앱 디자인 다 예쁘게 바꿔줘", "turn_id": "t1",
+                            "session_id": "s1", "cwd": "/proj"})
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        stored, = Ledger(root=self.home, profile=Profile()).month(_month())
+        self.assertEqual(stored["kind"], "gate")
+
+    def test_gate_on_prints_plain_text_not_json(self):
+        Profile(gate_enabled=True).save(self.home)
+        result = self._run({"prompt": "전체 앱 디자인 다 예쁘게 바꿔줘", "turn_id": "t2",
+                            "session_id": "s1", "cwd": "/proj"})
+        self.assertNotIn("hookSpecificOutput", result.stdout)  # that's Claude Code's envelope, not Codex's
+        self.assertIn("A.", result.stdout)
+
+    def test_malformed_input_never_breaks_the_turn(self):
+        result = subprocess.run([sys.executable, str(self.script)], input="not json",
+                                capture_output=True, text=True, env=self.env)
+        self.assertEqual(result.returncode, 0)
 
 
 class ReportTest(unittest.TestCase):

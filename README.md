@@ -8,6 +8,11 @@
 사용 기록 → 낭비 습관 탐지 → 실행 전 4지선다 → 반복 작업 승격 → 다음 달 더 적게
 ```
 
+**처음 설치하는 분은 이 README 대신 아래 가이드를 보세요.** 복사해서 붙여넣기만 하면 되도록 썼습니다.
+
+- [설치·사용법 — Claude Code 편](docs/guide-claude.md)
+- [설치·사용법 — Codex 편](docs/guide-codex.md) (실행 전 확인만 지원, 자동 리포트는 아직)
+
 ## 이렇게 생겼습니다 (예시)
 
 `ai-saver backfill` 한 번이면 이미 쌓인 기록에서 이런 리포트가 나옵니다. 아래는 예시 데이터입니다.
@@ -84,6 +89,8 @@ git clone https://github.com/hanleem/AI_saver.git
 
 플러그인이 `UserPromptSubmit`(판정)과 `SessionEnd`(집계) 훅을 등록합니다. Python 3.10+ 필요, 표준 라이브러리만 씁니다.
 
+Codex CLI에서 쓰려면 설치 방식이 다릅니다 — [Codex 편 가이드](docs/guide-codex.md)를 보세요.
+
 ## 처음 할 일 — 기준선부터
 
 ```bash
@@ -140,13 +147,14 @@ python .../ai_saver_cli.py gate on
 ## 한계 (먼저 밝힙니다)
 
 1. **성공 판정은 추정입니다.** 쓴 양은 정확하지만, 그중 무엇이 꼭 필요했는지는 기계가 모릅니다. 리포트에 추정이라고 표시합니다.
-2. **Claude Code 전용입니다.** 다른 도구에는 이런 트랜스크립트가 없습니다.
-3. **락인 조항이 없습니다.** 3개월 절감이 상시 비용보다 작으면 이 도구를 끄라고 권고합니다.
+2. **자동 리포트(습관 탐지)는 Claude Code 전용입니다.** Codex CLI도 최근 비슷한 훅을 지원하지만, Codex가 남기는 대화 기록 파일 형식을 아직 확실히 검증하지 못해 파싱기는 만들지 않았습니다. 틀린 숫자를 보여주는 것보다 안 보여주는 게 낫다고 판단했습니다.
+3. **실행 전 확인(게이트)은 Claude Code·Codex 둘 다 됩니다.** 이 기능은 프롬프트 문장만 보고 판단하므로 대화 기록 형식과 무관합니다. [Codex 편 가이드](docs/guide-codex.md) 참고.
+4. **락인 조항이 없습니다.** 3개월 절감이 상시 비용보다 작으면 이 도구를 끄라고 권고합니다.
 
 ## 개발
 
 ```bash
-python tests/test_ai_saver.py     # 25 tests
+python tests/test_ai_saver.py     # 28 tests
 ```
 
 MIT.

@@ -54,7 +54,8 @@ class Verdict:
         paid on every high-risk prompt."""
         lines = [
             f"[AI_saver] 이 요청은 작업량이 클 수 있습니다 ({', '.join(self.reasons)}).",
-            "도구를 하나도 쓰기 전에 AskUserQuestion으로 아래 4개를 그대로 제시하고 답을 기다리세요.",
+            "도구를 하나도 쓰기 전에 아래 4개를 그대로 사용자에게 보여주고 답을 기다리세요"
+            "(질문 도구가 있으면 그것으로, 없으면 목록을 그대로 출력해서 물어보세요).",
         ]
         for option in self.options:
             mark = "  ← 추천" if option.key == self.recommended else ""
