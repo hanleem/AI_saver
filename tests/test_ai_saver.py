@@ -535,6 +535,30 @@ class PromotionTest(unittest.TestCase):
         self.assertEqual(skill.occurrences, 7)
         self.assertEqual(len(skill.rules), len(set(skill.rules)))  # no duplicates
 
+    def test_shared_command_merges_triggers_too(self):
+        skill = render_skill(["SCOPE_BLOWUP", "VAGUE_SCOPE"], {"SCOPE_BLOWUP": 4, "VAGUE_SCOPE": 3})
+        self.assertIn("전체", skill.triggers)  # from SCOPE_BLOWUP
+        self.assertIn("알아서", skill.triggers)  # from VAGUE_SCOPE
+        self.assertEqual(len(skill.triggers), len(set(skill.triggers)))  # no duplicates
+
+    def test_description_names_the_situation_not_just_the_behaviour(self):
+        """The gap a beginner actually hit: a rule sentence alone doesn't
+        say THEIR prompt is the situation this applies to."""
+        skill = render_skill(["VAGUE_SCOPE"], {"VAGUE_SCOPE": 10})
+        self.assertIn("이런 상황", skill.description)
+        self.assertIn("알아서", skill.description)
+
+    def test_no_triggers_still_renders_a_valid_description(self):
+        skill = Skill("x", "요약", ("규칙",), ("X",), 5)  # triggers defaults to ()
+        self.assertNotIn("이런 상황", skill.description)
+        self.assertIn("요약", skill.render())
+
+    def test_build_loop_rule_names_its_own_trigger_condition(self):
+        """The other half of the same ask: the skill's own instructions,
+        not just its description, should state the condition explicitly."""
+        skill = render_skill(["BUILD_LOOP"], {"BUILD_LOOP": 22})
+        self.assertTrue(any("이미 build나 test를 한 번 실행했다면" in rule for rule in skill.rules))
+
     def test_write_makes_a_real_autocompleting_file(self):
         root = Path(tempfile.mkdtemp())
         skill = render_skill(["REDISCOVERY"], {"REDISCOVERY": 6})
@@ -551,7 +575,20 @@ class PromotionTest(unittest.TestCase):
         skill = render_skill(["REDISCOVERY"], {"REDISCOVERY": 123})
         self.assertIn("123회", skill.description)
         self.assertIn(PURPOSE["REDISCOVERY"].summary, skill.description)
-        self.assertIn(f"description: {skill.description}", skill.render())
+        self.assertIn(skill.description, skill.render())  # present, quoting aside
+
+    def test_description_is_valid_yaml_even_with_a_colon_inside(self):
+        """The actual bug this project shipped: 'triggers' join into the
+        description as "이런 상황: ..." -- an unquoted colon-space inside a
+        YAML plain scalar breaks parsing, and Claude Code silently fell
+        back to something else instead of showing this description at all."""
+        import json as _json
+        skill = render_skill(["VAGUE_SCOPE"], {"VAGUE_SCOPE": 10})
+        self.assertIn(":", skill.description)  # the hazard is actually present
+        rendered = skill.render()
+        description_line = next(l for l in rendered.splitlines() if l.startswith("description:"))
+        quoted = description_line[len("description: "):]
+        self.assertEqual(_json.loads(quoted), skill.description)  # round-trips through real JSON/YAML parsing
 
     def test_default_root_is_the_folder_claude_code_watches(self):
         self.assertEqual(skills_root(), Path.home() / ".claude" / "skills")

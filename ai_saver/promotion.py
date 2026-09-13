@@ -20,9 +20,20 @@ fix), so ``render_skill`` takes a set of codes and merges their rules
 rather than producing one file per code -- the SkillReducer lesson this
 project keeps citing: every extra skill is a standing cost, so a shared
 remedy should be one file, not several.
+
+Each ``Purpose`` also carries ``triggers`` -- short phrases naming the
+situation, not the fix. A rule sentence ("탐색 범위를 좁힌다") tells a
+person what the command does but not that their own prompt ("전체 다 고쳐줘")
+is the situation it is for, and it gives Claude Code's own skill-routing
+(which reads ``description`` to decide when to invoke a skill unasked)
+far less to match against than the actual words involved. ``triggers``
+fixes both: it goes into ``description`` for people scanning `/`
+autocomplete, and into the routing signal Claude Code already uses.
 """
 
 from __future__ import annotations
+
+import json
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,11 +50,22 @@ class Purpose:
     command: str  # the /name it becomes
     summary: str  # one line: what this actually does, for the report
     rules: tuple[str, ...]  # the behaviour, once promoted
+    triggers: tuple[str, ...] = ()  # short phrases naming the situation, for description + routing
 
 
 # One entry per detector in signals.CODES. Two codes may point at the same
 # command (SCOPE_BLOWUP and VAGUE_SCOPE are both "the ask was too open");
 # render_skill merges their rules instead of writing two files.
+#
+# ``triggers`` matters for two different readers:
+#   - a person scanning `/` autocomplete, who cannot tell "탐색 범위를 좁힌다"
+#     applies to THEIR situation without an example of what that situation
+#     looks like;
+#   - Claude Code's own routing, which (per its docs) uses `description` to
+#     decide when to invoke a skill automatically -- a bare behaviour
+#     sentence gives it far less to match against than the actual words a
+#     prompt uses ("전체", "다 고쳐줘") or the situation to notice in its own
+#     actions ("이미 build를 한 번 돌렸는데 또 돌리려는 참").
 PURPOSE: dict[str, Purpose] = {
     "REDISCOVERY": Purpose(
         "focus-file",
@@ -53,6 +75,7 @@ PURPOSE: dict[str, Purpose] = {
             "같은 파일을 이미 읽었으면 다시 열지 않는다 -- 기억한 내용을 그대로 쓴다.",
             "사용자가 새로 지목하기 전까지 다른 파일은 열지 않는다.",
         ),
+        ("같은 파일을 또 열려는 순간",),
     ),
     "SCOPE_BLOWUP": Purpose(
         "scoped-edit",
@@ -62,15 +85,19 @@ PURPOSE: dict[str, Purpose] = {
             "관련 여부가 불확실한 파일은 열기 전에 먼저 사용자에게 확인한다.",
             "프로젝트 전체 탐색은 사용자가 명시적으로 요청했을 때만 한다.",
         ),
+        ("전체", "모든", "다 고쳐줘", "정리해줘", "점검해줘", "리팩터해줘"),
     ),
     "BUILD_LOOP": Purpose(
         "quick-test",
         "build·test를 마지막에 정확히 한 번만 돌린다.",
         (
+            "이번 대화에서 이미 build나 test를 한 번 실행했다면, 사용자가 다시 "
+            "요청하기 전까지는 또 실행하지 않는다.",
             "수정하는 동안에는 build나 test를 실행하지 않는다.",
             "요청한 수정이 모두 끝난 뒤, 확인을 위해 정확히 한 번만 실행한다.",
             "실패하면 원인을 고치고 한 번 더 실행한다 -- 그 이상 반복하지 않는다.",
         ),
+        ("이미 build나 test를 실행했는데 또 실행하려는 순간",),
     ),
     "THRASH": Purpose(
         "ui-edit",
@@ -80,6 +107,7 @@ PURPOSE: dict[str, Purpose] = {
             "그 결과에 필요한 부분만 고치고, 관련 없는 다른 부분은 손대지 않는다.",
             "다 고친 뒤 한 번만 확인하고 끝낸다 -- 고쳤다 되돌리는 것을 반복하지 않는다.",
         ),
+        ("같은 부분을 고쳤다 되돌리기를 반복하려는 순간",),
     ),
     "CONTEXT_REPEAT": Purpose(
         "project-brief",
@@ -90,6 +118,7 @@ PURPOSE: dict[str, Purpose] = {
             "CLAUDE.md가 없는데 사용자가 프로젝트를 길게 설명했다면, 다음에 또 "
             "설명할 필요 없도록 CLAUDE.md를 새로 만들지 물어본다.",
         ),
+        ("사용자가 프로젝트 설명을 이전과 비슷하게 다시 적으려는 순간",),
     ),
     "VAGUE_SCOPE": Purpose(
         "scoped-edit",
@@ -98,6 +127,7 @@ PURPOSE: dict[str, Purpose] = {
             "요청에 대상(파일·화면·기능)이 없으면, 도구를 쓰기 전에 무엇을 고칠지 먼저 물어본다.",
             "'전체', '다', '알아서' 같은 말이 나오면 구체적인 범위로 되물은 뒤 시작한다.",
         ),
+        ("전체", "다", "알아서", "적당히", "문제 있으면"),
     ),
     "UNDERSCOPED_FAIL": Purpose(
         "wider-edit",
@@ -106,6 +136,7 @@ PURPOSE: dict[str, Purpose] = {
             "이 종류의 작업은 관련 파일 1~2개를 함께 확인하는 것부터 시작한다.",
             "고친 뒤 관련 화면·기능이 함께 깨지지 않았는지 한 번 더 확인한다.",
         ),
+        ("좁게 고쳤는데 같은 요청이 곧바로 다시 오는 순간",),
     ),
 }
 
@@ -121,29 +152,39 @@ class Skill:
     rules: tuple[str, ...]
     sources: tuple[str, ...]  # which detector codes fed this file
     occurrences: int
+    triggers: tuple[str, ...] = ()
 
     @property
     def description(self) -> str:
-        """The line Claude Code shows next to the name in `/` autocomplete.
+        """The line Claude Code shows next to the name in `/` autocomplete,
+        and what its own routing reads to decide whether to invoke this
+        skill without being asked by name.
 
-        Leads with "AI_saver가 만듦" and the count on purpose -- the plain
-        rule text alone ("지목한 파일만 읽는다") doesn't say why this command
-        exists or that it came from real, counted repetition, and that is
-        exactly what a person scanning the list needs to decide whether to
-        use it.
+        Three things a person -- or the model -- needs, in one line: why
+        this command exists (count), what it does (summary), and the
+        situation that means it applies (triggers). The rule text alone
+        ("지목한 파일만 읽는다") answers the middle question only; a beginner
+        scanning the list still cannot tell it is THEIR situation without
+        the third part.
         """
-        return f"AI_saver 자동 생성 ({self.occurrences}회 감지) -- {self.summary}"
+        base = f"AI_saver 자동 생성 ({self.occurrences}회 감지) -- {self.summary}"
+        if not self.triggers:
+            return base
+        return f"{base} 이런 상황: {', '.join(self.triggers)}."
 
     def render(self) -> str:
         body = [
             "---",
             f"name: {self.command}",
-            f"description: {self.description}",
+            f"description: {_yaml_string(self.description)}",
             "---",
             "",
             f"AI_saver가 지난 기록에서 같은 습관을 {self.occurrences}번 감지해 만들었습니다.",
             "",
         ]
+        if self.triggers:
+            body.append(f"**언제 씀**: {', '.join(self.triggers)}")
+            body.append("")
         body += [f"- {rule}" for rule in self.rules]
         text = "\n".join(body) + "\n"
         lines = text.count("\n")
@@ -159,6 +200,21 @@ class Skill:
         path = folder / "SKILL.md"
         path.write_text(self.render(), encoding="utf-8")
         return path
+
+
+def _yaml_string(text: str) -> str:
+    """A YAML double-quoted scalar for ``text``.
+
+    A plain (unquoted) YAML scalar cannot contain ": " -- a colon followed
+    by a space is ambiguous with mapping syntax and breaks the parser.
+    ``triggers`` phrases are joined into the description as "이런 상황: ..."
+    on purpose, so unquoted was never safe here; this bit for real, silently
+    (the file still loaded as *something*, just not the description meant).
+    JSON string escaping is a valid subset of YAML's double-quoted scalar
+    syntax, so ``json.dumps`` does the escaping without pulling in a YAML
+    dependency this project otherwise has no use for.
+    """
+    return json.dumps(text, ensure_ascii=False)
 
 
 def skills_root() -> Path:
@@ -182,10 +238,14 @@ def render_skill(codes: Sequence[str], counts: dict[str, int]) -> Skill:
         dict.fromkeys(p.summary for p in purposes)
     )
     rules: list[str] = []
+    triggers: list[str] = []
     for purpose in purposes:
         for rule in purpose.rules:
             if rule not in rules:
                 rules.append(rule)
+        for trigger in purpose.triggers:
+            if trigger not in triggers:
+                triggers.append(trigger)
 
     return Skill(
         command=command,
@@ -193,6 +253,7 @@ def render_skill(codes: Sequence[str], counts: dict[str, int]) -> Skill:
         rules=tuple(rules),
         sources=tuple(codes),
         occurrences=sum(counts.get(code, 0) for code in codes),
+        triggers=tuple(triggers),
     )
 
 
