@@ -163,7 +163,7 @@ python .../ai_saver_cli.py gate on
 ## 개발
 
 ```bash
-python tests/test_ai_saver.py     # 39 tests
+python tests/test_ai_saver.py     # 47 tests
 ```
 
 MIT.

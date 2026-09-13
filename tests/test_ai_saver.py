@@ -9,12 +9,14 @@ import sys
 import tempfile
 import unittest
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from ai_saver import effect  # noqa: E402
 from ai_saver.gate import assess  # noqa: E402
-from ai_saver.ledger import Ledger, turn_record  # noqa: E402
+from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
 from ai_saver.profile import Profile  # noqa: E402
 from ai_saver.promotion import (  # noqa: E402
     PURPOSE, Skill, group_by_command, render_skill, skills_root,
@@ -298,6 +300,15 @@ class PromoteCliTest(unittest.TestCase):
         self.assertTrue((self.skills / "focus-file" / "SKILL.md").exists())
         self.assertIn("focus-file", result.stdout)
 
+    def test_promoting_leaves_a_baseline_so_effect_can_be_judged_later(self):
+        self._seed("REDISCOVERY", SKILL_MIN)
+        self._run("promote", "focus-file", "--root", str(self.skills))
+        promotions = [r for r in Ledger(root=self.home, profile=Profile()).all_records()
+                     if r.get("kind") == "promotion"]
+        self.assertEqual(len(promotions), 1)
+        self.assertEqual(promotions[0]["command"], "focus-file")
+        self.assertEqual(promotions[0]["baseline_count"], SKILL_MIN)
+
     def test_unknown_name_lists_what_exists_instead(self):
         result = self._run("promote", "not-a-real-thing", "--root", str(self.skills))
         self.assertEqual(result.returncode, 1)
@@ -330,6 +341,73 @@ class ReportTest(unittest.TestCase):
         self.assertIn("project-brief", text)
         self.assertIn(PURPOSE["CONTEXT_REPEAT"].summary, text)
         self.assertIn("아직 만들어진 명령어가 아닙니다", text)
+
+    def test_already_promoted_command_is_not_called_not_made_yet(self):
+        """Would otherwise contradict the effect section right below it,
+        which reads the same ledger and says the skill already exists."""
+        records = [turn_record(_turn(f"p{i}", "x", [])) for i in range(5)]
+        for r in records:
+            r["signals"] = [{"code": "CONTEXT_REPEAT", "detail": "", "wasted": 0}]
+        text = render_month(_month(), records, promoted=frozenset({"project-brief"}))
+        self.assertNotIn("project-brief` (아직 없음", text)
+        self.assertIn("이미 명령어로 만들어져", text)
+
+
+def _promo(command: str, codes: list[str], baseline_count: int, days_ago: int,
+          baseline_days: int = 30) -> dict:
+    record = promotion_record(command, codes, baseline_count, baseline_days)
+    record["ts"] = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat(timespec="seconds")
+    return record
+
+
+def _turns_at(code: str, count: int, days_ago: int) -> list[dict]:
+    ts = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat(timespec="seconds")
+    records = []
+    for i in range(count):
+        r = turn_record(_turn(f"{code}{days_ago}-{i}", "x", []))
+        r["ts"] = ts
+        r["signals"] = [{"code": code, "detail": "", "wasted": 0}]
+        records.append(r)
+    return records
+
+
+class EffectTest(unittest.TestCase):
+    def test_fresh_promotion_is_too_soon_to_judge(self):
+        records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=2)]
+        result, = effect.evaluate(records)
+        self.assertEqual(result.verdict, "TOO_SOON")
+
+    def test_habit_that_kept_happening_is_not_working(self):
+        # baseline: 30 over 30 days = 1/day. Same rate continues after promotion.
+        records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=20)]
+        records += _turns_at("REDISCOVERY", 20, days_ago=10)  # ~1/day since promotion too
+        result, = effect.evaluate(records)
+        self.assertEqual(result.verdict, "NOT_WORKING")
+        self.assertIn("지워도 됩니다", result.recommendation)
+
+    def test_habit_that_nearly_stopped_is_working(self):
+        records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=20)]
+        records += _turns_at("REDISCOVERY", 1, days_ago=10)  # almost nothing since
+        result, = effect.evaluate(records)
+        self.assertEqual(result.verdict, "WORKING")
+        self.assertIn("계속 쓰세요", result.recommendation)
+
+    def test_signals_before_promotion_do_not_count_against_it(self):
+        records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=20)]
+        records += _turns_at("REDISCOVERY", 50, days_ago=25)  # all BEFORE promotion
+        result, = effect.evaluate(records)
+        self.assertEqual(result.verdict, "WORKING")
+
+    def test_reproposal_judges_from_the_newest_baseline(self):
+        records = [
+            _promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=40),
+            _promo("focus-file", ["REDISCOVERY"], baseline_count=5, days_ago=20),
+        ]
+        result, = effect.evaluate(records)
+        self.assertEqual(result.baseline_per_day, 5 / 30)
+
+    def test_no_promotions_renders_nothing(self):
+        self.assertEqual(effect.render(effect.evaluate([])), "")
 
 
 class PromotionTest(unittest.TestCase):

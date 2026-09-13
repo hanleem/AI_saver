@@ -23,7 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai_saver.ledger import Ledger, turn_record  # noqa: E402
+from ai_saver import effect  # noqa: E402
+from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
 from ai_saver.profile import Profile, data_root  # noqa: E402
 from ai_saver.promotion import PURPOSE, group_by_command, render_skill, skills_root  # noqa: E402
 from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
@@ -56,7 +57,16 @@ def report(args) -> int:
     ledger = Ledger(profile=Profile.load())
     month = args.month or (ledger.months()[-1] if ledger.months() else
                            datetime.now().strftime("%Y-%m"))
-    text = render_month(month, ledger.month(month), technical=args.technical)
+    all_records = ledger.all_records()
+    promoted = frozenset(r["command"] for r in all_records
+                         if r.get("kind") == "promotion" and r.get("command"))
+
+    text = render_month(month, ledger.month(month), technical=args.technical, promoted=promoted)
+
+    effects_text = effect.render(effect.evaluate(all_records))
+    if effects_text:
+        text += "\n" + effects_text
+
     path = data_root() / "reports" / f"{month}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -91,8 +101,7 @@ def gate(args) -> int:
 
 def _recent_records(ledger: Ledger, days: int = PROMOTION_WINDOW_DAYS) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    records = [r for month in ledger.months() for r in ledger.month(month)]
-    return [r for r in records if str(r.get("ts") or "") >= cutoff]
+    return [r for r in ledger.all_records() if str(r.get("ts") or "") >= cutoff]
 
 
 def promote(args) -> int:
@@ -130,9 +139,12 @@ def promote(args) -> int:
 
     skill = render_skill(codes, counts)
     path = skill.write(Path(args.root) if args.root else None)
+    ledger.append([promotion_record(skill.command, codes, total, PROMOTION_WINDOW_DAYS)])
+
     print(f"만들었습니다: {path}")
     print(f"지금 Claude Code에서 `/{skill.command}` 을 쳐보세요 — 자동완성에 바로 뜹니다.")
     print(f"하는 일: {skill.summary}")
+    print(f"{effect.MIN_OBSERVATION_DAYS}일 뒤부터 리포트에 효과가 있었는지 자동으로 나옵니다.")
     return 0
 
 

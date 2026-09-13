@@ -2,7 +2,13 @@
 
 Interface
 ---------
-    render_month(month, records, technical=False) -> str
+    render_month(month, records, technical=False, promoted=frozenset()) -> str
+
+``promoted`` names commands that already have a real SKILL.md (from
+``ledger.all_records()`` filtered to kind "promotion") so the candidate
+list never calls something "not made yet" right above a section that says
+it is already being measured -- the two sections read the same ledger and
+must not disagree.
 
 House rule: no raw token counts in the normal report. "42,378 cache_read
 tokens" tells a beginner nothing and makes the tool feel like a bill.
@@ -54,7 +60,8 @@ _ADVICE: Mapping[str, tuple[str, str]] = {
 }
 
 
-def render_month(month: str, records: Sequence[Mapping], technical: bool = False) -> str:
+def render_month(month: str, records: Sequence[Mapping], technical: bool = False,
+                 promoted: frozenset[str] = frozenset()) -> str:
     turns = [r for r in records if r.get("kind") == "turn"]
     gates = [r for r in records if r.get("kind") == "gate"]
     if not turns:
@@ -88,14 +95,16 @@ def render_month(month: str, records: Sequence[Mapping], technical: bool = False
         out.append("")
 
     eligible = [code for code, count in counts.items() if count >= SKILL_MIN]
+    groups = {command: codes for command, codes in group_by_command(eligible).items()
+             if command not in promoted}
     out.append("## /명령어 후보")
     out.append("")
-    out.append("**아직 만들어진 명령어가 아닙니다.** 아래는 '이 규칙을 명령어로 "
-               "만들면 좋겠다'는 제안이고, `/`를 쳐도 자동완성에 뜨지 않습니다. "
-               "실제로 만들려면 맨 아래 방법을 따라 승격하세요.")
-    out.append("")
-    if eligible:
-        for command, codes in group_by_command(eligible).items():
+    if groups:
+        out.append("**아직 만들어진 명령어가 아닙니다.** 아래는 '이 규칙을 명령어로 "
+                   "만들면 좋겠다'는 제안이고, `/`를 쳐도 자동완성에 뜨지 않습니다. "
+                   "실제로 만들려면 맨 아래 방법을 따라 승격하세요.")
+        out.append("")
+        for command, codes in groups.items():
             count = sum(counts[code] for code in codes)
             summary = purpose_of(codes[0]).summary
             out.append(f"### `/{command}` (아직 없음, {count}번 반복)")
@@ -105,6 +114,9 @@ def render_month(month: str, records: Sequence[Mapping], technical: bool = False
                    "\"skill-promote 해줘\"라고 말하면 됩니다). "
                    "실제 `SKILL.md` 파일을 만들어서, 만든 즉시 `/`에 나타납니다. "
                    "상시 비용이 절감보다 크면 만들지 않습니다.")
+    elif promoted:
+        out.append("지금 반복되는 습관은 전부 이미 명령어로 만들어져 있습니다. "
+                   "효과가 있었는지는 아래 절을 보세요.")
     else:
         out.append(f"아직 없습니다. 같은 습관이 {SKILL_MIN}번 이상 반복돼야 후보가 됩니다.")
     out.append("")

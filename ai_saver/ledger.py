@@ -6,8 +6,10 @@ Interface
     Ledger(...).month(ym)                 -> list[dict]
     Ledger(...).months()                  -> list[str]
     Ledger(...).decisions(ym)             -> dict[prompt_id, option]
+    Ledger(...).all_records()             -> list[dict]
     turn_record(turn, findings)           -> dict
     gate_record(prompt_id, verdict, ...)  -> dict
+    promotion_record(skill, baseline)     -> dict
 
 Append is idempotent: re-running a backfill over the same transcripts must
 not double-count, and a session that is analysed twice must not grow the
@@ -29,7 +31,7 @@ from .profile import Profile, data_root
 from .signals import Finding
 from .transcript import BUILD, EDIT, READ, Turn
 
-__all__ = ["Ledger", "turn_record", "gate_record"]
+__all__ = ["Ledger", "turn_record", "gate_record", "promotion_record"]
 
 SCHEMA = 1
 
@@ -81,6 +83,11 @@ class Ledger:
         if not self._root.exists():
             return []
         return sorted(p.stem for p in self._root.glob("*.jsonl"))
+
+    def all_records(self) -> list[dict]:
+        """Every record, every month. Effect evaluation and promotion
+        eligibility both need to look further back than one calendar month."""
+        return [record for month in self.months() for record in self.month(month)]
 
     def decisions(self, month: str) -> dict[str, str]:
         """Which option the person actually picked, per prompt."""
@@ -147,6 +154,23 @@ def gate_record(prompt_id: str, verdict, session_id: str = "", cwd: str = "",
         "recommended": verdict.recommended,
         "choice": choice,
         "prompt": prompt,
+    }
+
+
+def promotion_record(command: str, codes: Sequence[str], baseline_count: int,
+                     baseline_days: int) -> dict:
+    """Marks the moment a habit became a skill, with the rate that justified
+    it. Without this, nothing could later tell whether the skill actually
+    changed the habit -- there would be no "before" to compare "after" to."""
+    return {
+        "v": SCHEMA,
+        "kind": "promotion",
+        "id": command,
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "command": command,
+        "codes": list(codes),
+        "baseline_count": baseline_count,
+        "baseline_days": baseline_days,
     }
 
 
