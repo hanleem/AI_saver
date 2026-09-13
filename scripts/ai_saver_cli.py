@@ -36,13 +36,29 @@ from ai_saver.promotion import (  # noqa: E402
 from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
 from ai_saver.signals import detect  # noqa: E402
 from ai_saver.transcript import read_all_turns, transcript_root  # noqa: E402
+from ai_saver.codex_transcript import (  # noqa: E402
+    codex_transcript_root, read_all_codex_turns,
+)
 
 PROMOTION_WINDOW_DAYS = 30
 
 
+def _configure_console() -> None:
+    """Do not crash on Windows consoles that cannot encode one glyph."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(errors="replace")
+
+
 def backfill(args) -> int:
     since = datetime.now(timezone.utc) - timedelta(days=args.days)
-    turns = read_all_turns(Path(args.root) if args.root else transcript_root(), since=since)
+    if args.source == "codex":
+        root = Path(args.root) if args.root else codex_transcript_root()
+        turns = read_all_codex_turns(root, since=since)
+    else:
+        root = Path(args.root) if args.root else transcript_root()
+        turns = read_all_turns(root, since=since)
     if not turns:
         print("트랜스크립트를 찾지 못했습니다.")
         return 1
@@ -122,8 +138,8 @@ def promote(args) -> int:
             return 0
         for command, codes in group_by_command(list(eligible)).items():
             total = sum(eligible.get(c, 0) for c in codes)
-            print(f"/{command} — 최근 {PROMOTION_WINDOW_DAYS}일간 {total}번  "
-                  f"(python {Path(__file__).name} promote {command})")
+            print(f"${command} — 최근 {PROMOTION_WINDOW_DAYS}일간 {total}번  "
+                  f"(python {Path(__file__).name} promote {command} --platform codex)")
         return 0
 
     if not args.command:
@@ -144,11 +160,13 @@ def promote(args) -> int:
         return 1
 
     skill = render_skill(codes, counts)
-    path = skill.write(Path(args.root) if args.root else None)
+    path = skill.write(Path(args.root) if args.root else None, platform=args.platform)
     ledger.append([promotion_record(skill.command, codes, total, PROMOTION_WINDOW_DAYS)])
 
     print(f"만들었습니다: {path}")
-    print(f"지금 Claude Code에서 `/{skill.command}` 을 쳐보세요 — 자동완성에 바로 뜹니다.")
+    invocation = f"${skill.command}" if args.platform == "codex" else f"/{skill.command}"
+    product = "Codex" if args.platform == "codex" else "Claude Code"
+    print(f"지금 {product}에서 `{invocation}` 을 입력해보세요.")
     print(f"하는 일: {skill.summary}")
     print(f"{effect.MIN_OBSERVATION_DAYS}일 뒤부터 리포트에 효과가 있었는지 자동으로 나옵니다.")
 
@@ -156,7 +174,7 @@ def promote(args) -> int:
     # text-optimizer exists (a file-system check, still free) and name it as
     # an option. Whether it's worth the tokens on a file this small is a
     # judgment call for whoever is driving this, not something the CLI decides.
-    if text_optimizer_available():
+    if text_optimizer_available(skills_root(args.platform)):
         print(f"참고: text-optimizer skill이 설치돼 있습니다. "
               f"이 문구를 더 줄이고 싶으면 그 skill로 {path}를 검토해보세요.")
     return 0
@@ -217,12 +235,15 @@ def status(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_console()
     parser = argparse.ArgumentParser(prog="ai-saver", description="AI_saver")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     p = subparsers.add_parser("backfill", help="지난 기록으로 기준선 만들기")
     p.add_argument("--days", type=int, default=60)
     p.add_argument("--root", default="")
+    p.add_argument("--source", choices=("claude", "codex"), default="codex",
+                   help="읽을 대화 기록 종류")
     p.set_defaults(func=backfill)
 
     p = subparsers.add_parser("report", help="월간 리포트")
@@ -240,11 +261,13 @@ def main(argv: list[str] | None = None) -> int:
     p = subparsers.add_parser("status", help="현재 상태")
     p.set_defaults(func=status)
 
-    p = subparsers.add_parser("promote", help="반복 습관을 실제 /명령어로 만들기")
+    p = subparsers.add_parser("promote", help="반복 습관을 실제 Codex 스킬로 만들기")
     p.add_argument("command", nargs="?", default="", help="예: focus-file")
     p.add_argument("--list", action="store_true", help="후보만 보기")
     p.add_argument("--force", action="store_true", help="기준 미달이어도 만들기")
     p.add_argument("--root", default="", help="테스트용: 다른 폴더에 쓰기")
+    p.add_argument("--platform", choices=("claude", "codex"), default="codex",
+                   help="스킬을 설치할 환경 (기본값: codex)")
     p.set_defaults(func=promote)
 
     p = subparsers.add_parser("wiki", help="4지선다 문구 위키 -- 보기/통계/초기화")

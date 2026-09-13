@@ -1,6 +1,8 @@
 # AI_saver
 
-실제 사용 기록에서 낭비 습관을 찾아, 비싼 요청 전에 범위를 좁히고, 반복 작업을 진짜 `/명령어`로 승격합니다.
+실제 사용 기록에서 낭비 습관을 찾아, 비싼 요청 전에 범위를 좁히고, 반복 작업을 진짜 Codex `$스킬`로 승격합니다.
+
+> 이 브랜치는 Codex 전용입니다. Claude Code용 안정 버전은 `main` 브랜치에 그대로 있습니다.
 
 다른 토큰 도구와 다른 점은 하나입니다. **설정이 아니라 기록을 봅니다.**
 
@@ -11,7 +13,7 @@
 **처음 설치하는 분은 이 README 대신 아래 가이드를 보세요.** 복사해서 붙여넣기만 하면 되도록 썼습니다.
 
 - [설치·사용법 — Claude Code 편](docs/guide-claude.md)
-- [설치·사용법 — Codex 편](docs/guide-codex.md) (실행 전 확인만 지원, 자동 리포트는 아직)
+- [설치·사용법 — Codex 편](docs/guide-codex.md) (집계·리포트·스킬 승격 지원)
 
 이 문서는 전체 구조를 알고 싶을 때, 또는 CLI 명령어를 찾을 때 보는 참고서입니다.
 
@@ -39,19 +41,19 @@
 - 다음엔 이렇게: 실행 횟수를 정해 주세요.
   예: `수정 다 끝난 뒤 build는 마지막에 한 번만.`
 
-## /명령어 후보
+## $스킬 후보
 
-아직 만들어진 명령어가 아닙니다. `/`를 쳐도 뜨지 않습니다.
+아직 만들어진 스킬이 아닙니다.
 
-### `/focus-file` (아직 없음, 9번 반복)
+### `$focus-file` (아직 없음, 9번 반복)
 - 만들어지면 하는 일: 지목한 파일만 읽고, 그 파일을 다시 열지 않는다.
 
-승격하려면 `skill-promote` skill을 부르세요. 실제 SKILL.md 파일을 만들어서,
-만든 즉시 `/`에 나타납니다. 상시 비용이 절감보다 크면 만들지 않습니다.
+승격하려면 `promote focus-file --platform codex`를 실행하세요. 실제 SKILL.md 파일을 만들어서
+Codex에서 `$focus-file`로 부를 수 있습니다. 상시 비용이 절감보다 크면 만들지 않습니다.
 
 ## 승격한 명령어, 효과가 있었나
 
-- `/quick-test` — 효과가 있습니다 (하루 발생률 82% 감소, 사용 6회). 계속 쓰세요.
+- `$quick-test` — 효과가 있습니다 (하루 발생률 82% 감소, 사용 6회). 계속 쓰세요.
 ```
 
 실행 전 확인은 위험한 요청에만 뜹니다:
@@ -88,28 +90,19 @@ LOW 프롬프트에는 **단 1토큰도 추가되지 않습니다.**
 ## 설치
 
 ```bash
-claude plugin marketplace add hanleem/AI_saver
-claude plugin install ai-saver@ai-saver
+git clone --branch codex https://github.com/hanleem/AI_saver.git
 ```
 
-또는 저장소를 직접 클론해서 씁니다.
-
-```bash
-git clone https://github.com/hanleem/AI_saver.git
-```
-
-플러그인이 `UserPromptSubmit`(판정)과 `SessionEnd`(집계) 훅을 등록합니다. Python 3.10+ 필요, 표준 라이브러리만 씁니다.
-
-Codex CLI에서 쓰려면 설치 방식이 다릅니다 — [Codex 편 가이드](docs/guide-codex.md)를 보세요.
+`UserPromptSubmit`(판정)과 `SessionEnd`(집계) 훅을 `~/.codex/hooks.json`에 연결합니다. Python 3.10+ 필요, 표준 라이브러리만 씁니다. 자세한 과정은 [Codex 편 가이드](docs/guide-codex.md)를 보세요.
 
 ## 처음 할 일 — 기준선부터
 
 > 아래 `.../`는 설치 경로를 줄여 쓴 표시입니다. 그대로 복사하면 동작하지 않습니다 —
 > 실제 경로로 바꿔 넣는 방법과, 따옴표를 잘못 넣었을 때 나는 오류(`can't open file '...py backfill'`)를 피하는 법은
-> [Claude Code 편 가이드](docs/guide-claude.md#이-아래-명령어를-쓰는-두-가지-방법)에 정리했습니다.
+> [Codex 편 가이드](docs/guide-codex.md)에 정리했습니다.
 
 ```bash
-python ~/.claude/plugins/.../ai-saver/scripts/ai_saver_cli.py backfill
+python .../AI_saver/scripts/ai_saver_cli.py backfill --source codex
 ```
 
 트랜스크립트는 **이미 디스크에 있습니다.** 그래서 아무것도 바꾸기 전에 지난 두 달 리포트가 바로 나옵니다.
@@ -118,13 +111,13 @@ python ~/.claude/plugins/.../ai-saver/scripts/ai_saver_cli.py backfill
 ## 명령어 전체 목록
 
 ```bash
-python .../ai_saver_cli.py backfill [--days 60]   # 트랜스크립트 -> 원장
+python .../ai_saver_cli.py backfill [--days 60] [--source claude|codex] # 트랜스크립트 -> 원장
 python .../ai_saver_cli.py report [YYYY-MM] [-t]  # 월간 리포트 (-t: 숫자 부록까지)
 python .../ai_saver_cli.py status                 # 현재 상태 요약
 python .../ai_saver_cli.py calibrate               # 개입 빈도를 목표(10%)에 맞춰 재조정
 python .../ai_saver_cli.py gate on|off             # 실행 전 확인 켜기/끄기
 python .../ai_saver_cli.py promote --list          # 승격 후보 보기 (30일 5회 이상)
-python .../ai_saver_cli.py promote <이름>          # 실제 SKILL.md 생성 -- 그 즉시 /<이름> 이 뜬다
+python .../ai_saver_cli.py promote <이름> [--platform claude|codex] # 실제 SKILL.md 생성
 python .../ai_saver_cli.py wiki                    # 4지선다 문구 보기 (목차 포함)
 python .../ai_saver_cli.py wiki stats              # 유형별 추천-vs-실제선택 숫자
 python .../ai_saver_cli.py wiki reset              # 손댄 위키를 기본값으로
@@ -147,13 +140,13 @@ python .../ai_saver_cli.py gate on
 ## 로그 위치와 프라이버시
 
 ```
-~/.claude/ai-saver/
+~/.codex/ai-saver/
 ├─ ledger/2026-09.jsonl    기계가 쓰는 원장 (turn·gate·promotion 레코드)
 ├─ reports/2026-09.md      사람이 읽는 리포트
 ├─ profile.json            기준점·모드
 └─ wiki/options.md         4지선다 문구 (편집 가능, 아래 설명)
 
-~/.claude/skills/<이름>/SKILL.md   승격된 /명령어 (Claude Code가 직접 감시하는 폴더)
+~/.codex/skills/<이름>/SKILL.md    승격된 $스킬 (Codex가 읽는 개인 스킬 폴더)
 ```
 
 `AI_SAVER_HOME` 환경변수로 원장 위치를 옮길 수 있습니다.
@@ -161,22 +154,22 @@ python .../ai_saver_cli.py gate on
 - **프롬프트 원문은 저장하지 않습니다.** 해시 12자와 길이만 남습니다(`store_prompts: false`). 원문을 보관하려면 `profile.json`에서 명시적으로 켜야 합니다.
 - **전송 코드가 아예 없습니다.** 이 저장소에는 `urllib`·`requests`·소켓을 쓰는 줄이 한 줄도 없습니다. 파일을 읽고 쓰는 것이 전부입니다.
 - 원장에는 작업 폴더 경로가 남습니다. 로컬에만 있지만, **리포트는 폴더 이름만** 보여줍니다 — 리포트는 남에게 보여줄 가능성이 있는 유일한 파일이기 때문입니다.
-- 저장 위치는 저장소 바깥(`~/.claude/ai-saver/`)입니다. `.gitignore`에도 막아 두었습니다.
+- Codex 브랜치의 저장 위치는 저장소 바깥(`~/.codex/ai-saver/`)입니다. Claude용 `main`의 기록과 섞이지 않습니다.
 
 ## 4지선다는 코드가 아니라 위키다 — 설치 첫날부터, 매달 더 똑똑해진다
 
-`gate.py`에는 문구가 하나도 하드코딩돼 있지 않습니다. 처음 쓰는 순간 `~/.claude/ai-saver/wiki/options.md`가 생기는데, **빈 기본값으로 시작하지 않습니다.** 이미 `~/.claude/projects/`에 쌓여 있는 **최근 3개월 실제 작업 기록**을 분석해서, 어떤 습관이 얼마나 있었는지 파일 맨 위에 적어두고 시작합니다(설치 전 데이터가 없으면 조용히 기본값으로만 시작합니다). 이 파일을 고치면 코드를 배포하지 않고도 다음 프롬프트부터 바로 반영됩니다.
+`gate.py`에는 문구가 하나도 하드코딩돼 있지 않습니다. 처음 쓰는 순간 `~/.codex/ai-saver/wiki/options.md`가 생기는데, **빈 기본값으로 시작하지 않습니다.** 이미 `~/.codex/sessions/`에 쌓여 있는 **최근 3개월 실제 작업 기록**을 분석해서, 어떤 습관이 얼마나 있었는지 파일 맨 위에 적어두고 시작합니다(설치 전 데이터가 없으면 조용히 기본값으로만 시작합니다). 이 파일을 고치면 코드를 배포하지 않고도 다음 프롬프트부터 바로 반영됩니다.
 
 월간 리뷰(`token-review`)가 `wiki stats`를 보고 "design 유형에서 추천과 다르게 고른 비율이 유독 높다" 같은 걸 발견하면, 그 유형의 문구·별점을 직접 고칩니다. **판단은 사람(또는 리뷰를 진행하는 세션)이 하고, 계산만 스크립트가 합니다** — 이 프로젝트 전체의 원칙과 같습니다. `bootstrap_note()`(3개월 실측)도 마찬가지로 사실만 적어두고, A/B/C/D 문구 자체는 절대 자동으로 고치지 않습니다.
 
-한 파일을 Claude Code와 Codex가 같이 씁니다. 어느 쪽에서 고치든 둘 다 좋아집니다.
+Codex 브랜치는 이 파일과 원장을 `~/.codex/ai-saver/`에 따로 보관합니다.
 
 ## 승격한 명령어도 매달 정리됩니다 — 두 가지 기준
 
 `report`의 "승격한 명령어, 효과가 있었나" 절이 매달 두 가지를 따로 봅니다.
 
 1. **습관이 실제로 줄었나** — 승격 전후 발생률을 비교합니다.
-2. **명령어 자체가 쓰였나** — Claude Code가 남기는 `attributionSkill` 기록으로, `/focus-file`이 실제로 몇 번 호출됐는지 셉니다. 습관이 우연히 다른 이유로 줄었어도, **명령어를 아무도 안 썼다면**(30일 지나 0~1회) 그 상시 비용은 절감 없이 남아 있는 것이므로 삭제 후보입니다.
+2. **스킬 자체가 쓰였나** — Codex 프롬프트의 명시적 `$focus-file` 호출을 세어 확인합니다. 습관이 우연히 다른 이유로 줄었어도, **스킬을 아무도 안 썼다면**(30일 지나 0~1회) 삭제 후보입니다.
 
 둘 중 하나만 걸려도 리포트가 삭제할 폴더 경로까지 그대로 알려줍니다. 실제 삭제는 사람이 리포트를 보고 결정합니다 — 자동으로 지우지 않습니다.
 
@@ -184,7 +177,7 @@ python .../ai_saver_cli.py gate on
 
 ## 매달 자동으로 돌게 만들기 (선택)
 
-리뷰를 매번 "해달라"고 하지 않아도 되게, 로컬 스케줄로 등록할 수 있습니다(Claude Code 데스크톱 앱의 예약 작업 — 클라우드가 아니라 이 컴퓨터에서, 앱이 켜져 있을 때 돕니다. 그래야 `~/.claude/` 안의 실제 데이터에 접근합니다. 클라우드 루틴은 로컬 파일에 접근하지 못해 이 용도에 안 맞습니다).
+리뷰를 매번 "해달라"고 하지 않아도 되게 Codex 데스크톱의 로컬 예약 작업으로 등록할 수 있습니다. 로컬 작업이어야 `~/.codex/`의 실제 데이터에 접근할 수 있습니다.
 
 `backfill → report → calibrate → wiki stats 확인 → 30일 20회 이상이면 확인 없이 자동 승격 → 사용횟수 0~1인 것 삭제 후보 표시 → 요약` 순서를 자기완결적인 프롬프트 하나로 등록해두면, 매달 1일 알아서 돕니다. 실제 삭제만 사람 몫으로 남깁니다.
 
@@ -197,9 +190,9 @@ python .../ai_saver_cli.py gate on
 ## 한계 (먼저 밝힙니다)
 
 1. **성공 판정은 추정입니다.** 쓴 양은 정확하지만, 그중 무엇이 꼭 필요했는지는 기계가 모릅니다. 리포트에 추정이라고 표시합니다.
-2. **자동 리포트(습관 탐지·승격·위키 부트스트랩)는 Claude Code 전용입니다.** Codex CLI도 최근 비슷한 훅을 지원하지만, Codex가 남기는 대화 기록 파일 형식을 아직 확실히 검증하지 못해 파싱기는 만들지 않았습니다. 틀린 숫자를 보여주는 것보다 안 보여주는 게 낫다고 판단했습니다.
-3. **실행 전 확인(게이트)은 Claude Code·Codex 둘 다 됩니다.** 이 기능은 프롬프트 문장만 보고 판단하므로 대화 기록 형식과 무관합니다. [Codex 편 가이드](docs/guide-codex.md) 참고.
-4. **매달 자동 스케줄은 로컬 전용입니다.** 이 컴퓨터에서 Claude Code 앱이 켜져 있을 때만 돕니다. 앱이 꺼져 있으면 다음 실행 때 돕니다.
+2. **Codex 기록 형식은 공개된 안정 API가 아닙니다.** 현재 로컬 세션의 턴·도구·토큰 이벤트를 검증한 파서가 알 수 없는 레코드와 깨진 줄을 건너뛰도록 만들었습니다. Codex가 형식을 크게 바꾸면 어댑터 업데이트가 필요할 수 있습니다.
+3. **실행 전 확인과 세션 종료 집계는 Claude Code·Codex 둘 다 됩니다.** Codex에서는 `backfill --source codex`, 스킬 승격은 `promote <이름> --platform codex`를 사용합니다. [Codex 편 가이드](docs/guide-codex.md) 참고.
+4. **매달 자동 스케줄은 로컬 전용입니다.** 이 컴퓨터에서 Codex 앱이 실행될 수 있을 때 동작합니다.
 5. **락인 조항이 없습니다.** 3개월 절감이 상시 비용보다 작으면 이 도구를 끄라고 권고합니다.
 
 ## 코드 구조
@@ -207,6 +200,7 @@ python .../ai_saver_cli.py gate on
 ```
 ai_saver/
 ├─ transcript.py   트랜스크립트 파싱 (usage 중복 제거, 툴 분류, attributionSkill 캡처)
+├─ codex_transcript.py Codex 세션을 같은 Turn 형식으로 변환
 ├─ signals.py      낭비 신호 7종 탐지
 ├─ gate.py         실행 전 판정 (순수 함수, 위키 없이도 동작)
 ├─ optionwiki.py   4지선다 문구의 편집 가능한 사본 + 3개월 실측 부트스트랩
@@ -221,7 +215,7 @@ ai_saver/
 ## 개발
 
 ```bash
-python tests/test_ai_saver.py     # 80 tests
+python tests/test_ai_saver.py     # 87 tests
 ```
 
 MIT.

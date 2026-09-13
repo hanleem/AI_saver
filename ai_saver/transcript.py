@@ -24,7 +24,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
-__all__ = ["TokenUse", "ToolCall", "Turn", "read_turns", "read_all_turns", "transcript_root"]
+__all__ = ["TokenUse", "ToolCall", "Turn", "read_turns", "read_all_turns",
+           "transcript_root", "shell_tool_call"]
 
 # Billing-proportional weights. Cache writes cost more than fresh input,
 # cache reads cost far less. Keeping the formula here means every caller
@@ -373,6 +374,11 @@ def _shell_call(name: str, command: str) -> ToolCall:
     if _BASH_READ.match(core):
         return ToolCall(name, READ, _first_path(core) or core[:60])
     return ToolCall(name, OTHER, core[:60])
+
+
+def shell_tool_call(name: str, command: str) -> ToolCall:
+    """Turn a shell command from another transcript adapter into a ToolCall."""
+    return _shell_call(name, command)
 
 
 _PREAMBLE = re.compile(r"^\s*(cd\b[^&;|]*|export\s+\w+=\S*|\w+=\S*)\s*$", re.I)

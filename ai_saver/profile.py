@@ -34,7 +34,7 @@ def data_root() -> Path:
     and each record carries its own ``cwd`` when a per-project view is wanted.
     """
     override = os.environ.get("AI_SAVER_HOME")
-    return Path(override) if override else Path.home() / ".claude" / "ai-saver"
+    return Path(override) if override else Path.home() / ".codex" / "ai-saver"
 
 
 @dataclass(frozen=True)

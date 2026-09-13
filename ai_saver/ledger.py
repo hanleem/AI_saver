@@ -126,6 +126,7 @@ def turn_record(turn: Turn, findings: Sequence[Finding] = ()) -> dict:
         "cache_creation": turn.tokens.cache_creation,
         "cache_read": turn.tokens.cache_read,
         "output": turn.tokens.output,
+        "thinking": turn.tokens.thinking,
         "calls": len(turn.calls),
         "reads": len(turn.targets(READ)),
         "edits": len(turn.targets(EDIT)),

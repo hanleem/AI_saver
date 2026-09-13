@@ -47,7 +47,7 @@ _ADVICE: Mapping[str, tuple[str, str]] = {
     ),
     "CONTEXT_REPEAT": (
         "매번 같은 설명을 다시 적었습니다.",
-        "프로젝트 설명은 CLAUDE.md에 한 번만 적어두면 매번 안 써도 됩니다.",
+        "프로젝트 설명은 AGENTS.md에 한 번만 적어두면 매번 안 써도 됩니다.",
     ),
     "VAGUE_SCOPE": (
         "무엇을 고칠지 정하지 않고 시작했습니다.",
@@ -97,25 +97,24 @@ def render_month(month: str, records: Sequence[Mapping], technical: bool = False
     eligible = [code for code, count in counts.items() if count >= SKILL_MIN]
     groups = {command: codes for command, codes in group_by_command(eligible).items()
              if command not in promoted}
-    out.append("## /명령어 후보")
+    out.append("## $스킬 후보")
     out.append("")
     if groups:
-        out.append("**아직 만들어진 명령어가 아닙니다.** 아래는 '이 규칙을 명령어로 "
-                   "만들면 좋겠다'는 제안이고, `/`를 쳐도 자동완성에 뜨지 않습니다. "
+        out.append("**아직 만들어진 스킬이 아닙니다.** 아래는 '이 규칙을 스킬로 "
+                   "만들면 좋겠다'는 제안입니다. "
                    "실제로 만들려면 맨 아래 방법을 따라 승격하세요.")
         out.append("")
         for command, codes in groups.items():
             count = sum(counts[code] for code in codes)
             summary = purpose_of(codes[0]).summary
-            out.append(f"### `/{command}` (아직 없음, {count}번 반복)")
+            out.append(f"### `${command}` (아직 없음, {count}번 반복)")
             out.append(f"- 만들어지면 하는 일: {summary}")
         out.append("")
-        out.append("승격하려면 `skill-promote` skill을 부르세요 (채팅에 "
-                   "\"skill-promote 해줘\"라고 말하면 됩니다). "
-                   "실제 `SKILL.md` 파일을 만들어서, 만든 즉시 `/`에 나타납니다. "
+        out.append("승격하려면 `promote <이름> --platform codex`를 실행하세요. "
+                   "실제 `SKILL.md` 파일을 만들고 Codex에서 `$이름`으로 부를 수 있습니다. "
                    "상시 비용이 절감보다 크면 만들지 않습니다.")
     elif promoted:
-        out.append("지금 반복되는 습관은 전부 이미 명령어로 만들어져 있습니다. "
+        out.append("지금 반복되는 습관은 전부 이미 스킬로 만들어져 있습니다. "
                    "효과가 있었는지는 아래 절을 보세요.")
     else:
         out.append(f"아직 없습니다. 같은 습관이 {SKILL_MIN}번 이상 반복돼야 후보가 됩니다.")
@@ -148,8 +147,15 @@ def _appendix(turns, gates, total_cost: float, wasted: float) -> list[str]:
         by_project[cwd.rsplit("/", 1)[-1] or "?"] += float(record.get("cost") or 0)
     cache_read = sum(int(r.get("cache_read") or 0) for r in turns)
     fresh = sum(int(r.get("input") or 0) + int(r.get("cache_creation") or 0) for r in turns)
+    output = sum(int(r.get("output") or 0) for r in turns)
+    thinking = sum(int(r.get("thinking") or 0) for r in turns)
+    raw_total = fresh + cache_read + output
 
     out = ["## 부록 (숫자)", "",
+           f"- 전체 토큰: {raw_total:,.0f}",
+           f"- 새 입력: {fresh:,.0f}",
+           f"- 캐시 입력: {cache_read:,.0f}",
+           f"- 출력: {output:,.0f} (이 중 추론 {thinking:,.0f})",
            f"- 가중 토큰 합계: {total_cost:,.0f}",
            f"- 되돌아간 추정분: {wasted:,.0f} ({_share(wasted, total_cost)})",
            f"- 캐시 읽기 비중: {_share(cache_read, cache_read + fresh)}",

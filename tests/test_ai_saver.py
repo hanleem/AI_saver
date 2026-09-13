@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from ai_saver import effect, optionwiki  # noqa: E402
 from ai_saver.gate import DEFAULT_OPTIONS, Option, assess  # noqa: E402
 from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
-from ai_saver.profile import Profile  # noqa: E402
+from ai_saver.profile import Profile, data_root  # noqa: E402
 from ai_saver.promotion import (  # noqa: E402
     PURPOSE, Skill, group_by_command, live_commands, render_skill, skills_root,
     text_optimizer_available, usage_counts,
@@ -25,6 +25,7 @@ from ai_saver.promotion import (  # noqa: E402
 from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
 from ai_saver.signals import detect  # noqa: E402
 from ai_saver.transcript import BUILD, EDIT, READ, ToolCall, Turn, read_turns  # noqa: E402
+from ai_saver.codex_transcript import read_codex_turns  # noqa: E402
 
 USAGE = {
     "input_tokens": 10,
@@ -340,6 +341,9 @@ class LedgerTest(unittest.TestCase):
 
 
 class ProfileTest(unittest.TestCase):
+    def test_codex_branch_uses_separate_data_root(self):
+        self.assertEqual(data_root(), Path.home() / ".codex" / "ai-saver")
+
     def test_calibration_targets_the_interruption_rate(self):
         tuned = Profile(threshold=45).calibrated(list(range(100)))
         self.assertEqual(tuned.threshold, 68)
@@ -389,6 +393,91 @@ class CodexHookTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(self.script)], input="not json",
                                 capture_output=True, text=True, env=self.env)
         self.assertEqual(result.returncode, 0)
+
+
+class CodexTranscriptTest(unittest.TestCase):
+    def _write(self, entries: list[dict]) -> Path:
+        path = Path(tempfile.mkstemp(suffix=".jsonl")[1])
+        path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in entries),
+                        encoding="utf-8")
+        return path
+
+    def test_reads_turn_tokens_without_double_counting_cache(self):
+        turn_id = "turn-1"
+        path = self._write([
+            {"timestamp": "2026-09-13T10:00:00Z", "type": "session_meta",
+             "payload": {"session_id": "session-1", "cwd": "C:/project"}},
+            {"timestamp": "2026-09-13T10:00:01Z", "type": "event_msg",
+             "payload": {"type": "item_completed", "turn_id": turn_id,
+                         "item": {"type": "UserMessage", "content": [
+                             {"type": "text", "text": "전체 앱을 고쳐줘"}]}}},
+            {"timestamp": "2026-09-13T10:00:02Z", "type": "token_usage_record",
+             "payload": {"turn_id": turn_id, "turn_token_usage": {
+                 "input_tokens": 1000, "cached_input_tokens": 800,
+                 "cache_write_input_tokens": 50, "output_tokens": 100,
+                 "reasoning_output_tokens": 40}}},
+        ])
+        turn, = read_codex_turns(path)
+        self.assertEqual(turn.session_id, "session-1")
+        self.assertEqual(turn.prompt, "전체 앱을 고쳐줘")
+        self.assertEqual(turn.tokens.input, 150)
+        self.assertEqual(turn.tokens.cache_read, 800)
+        self.assertEqual(turn.tokens.cache_creation, 50)
+        self.assertEqual(turn.tokens.output, 100)
+        self.assertEqual(turn.tokens.thinking, 40)
+        self.assertEqual(turn.tokens.raw, 1100)
+
+    def test_uses_latest_cumulative_turn_usage(self):
+        turn_id = "turn-2"
+        base = {"input_tokens": 100, "cached_input_tokens": 20,
+                "output_tokens": 10, "reasoning_output_tokens": 2}
+        final = {"input_tokens": 300, "cached_input_tokens": 200,
+                 "output_tokens": 30, "reasoning_output_tokens": 8}
+        path = self._write([
+            {"timestamp": "2026-09-13T10:00:00Z", "type": "response_item",
+             "payload": {"type": "message", "role": "user",
+                         "content": [{"type": "input_text", "text": "분석해줘"}],
+                         "internal_chat_message_metadata_passthrough": {"turn_id": turn_id}}},
+            {"timestamp": "2026-09-13T10:00:01Z", "type": "token_usage_record",
+             "payload": {"turn_id": turn_id, "turn_token_usage": base}},
+            {"timestamp": "2026-09-13T10:00:02Z", "type": "token_usage_record",
+             "payload": {"turn_id": turn_id, "turn_token_usage": final}},
+        ])
+        turn, = read_codex_turns(path)
+        self.assertEqual(turn.tokens.raw, 330)
+
+    def test_explicit_codex_skill_invocation_is_counted(self):
+        turn_id = "turn-skill"
+        path = self._write([
+            {"timestamp": "2026-09-13T10:00:00Z", "type": "event_msg",
+             "payload": {"type": "item_completed", "turn_id": turn_id,
+                         "item": {"type": "UserMessage", "content": [
+                             {"type": "text", "text": "$focus-file로 고쳐줘"}]}}},
+        ])
+        turn, = read_codex_turns(path)
+        self.assertEqual(turn.skills_used, {"focus-file"})
+
+    def test_session_end_hook_writes_redacted_codex_turn(self):
+        turn_id = "turn-hook"
+        transcript = self._write([
+            {"timestamp": "2026-09-13T10:00:00Z", "type": "event_msg",
+             "payload": {"type": "item_completed", "turn_id": turn_id,
+                         "item": {"type": "UserMessage", "content": [
+                             {"type": "text", "text": "비밀 프롬프트"}]}}},
+        ])
+        home = Path(tempfile.mkdtemp())
+        script = Path(__file__).resolve().parent.parent / "hooks" / "codex_on_session_end.py"
+        env = {**os.environ, "AI_SAVER_HOME": str(home), "PYTHONIOENCODING": "utf-8"}
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            input=json.dumps({"transcript_path": str(transcript)}),
+            capture_output=True, text=True, encoding="utf-8", env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        records = Ledger(root=home, profile=Profile()).all_records()
+        self.assertEqual(len(records), 1)
+        self.assertNotIn("prompt", records[0])
+        self.assertIn("prompt_hash", records[0])
 
 
 class WikiCliTest(unittest.TestCase):
@@ -509,7 +598,7 @@ class ReportTest(unittest.TestCase):
         text = render_month(_month(), records)
         self.assertIn("project-brief", text)
         self.assertIn(PURPOSE["CONTEXT_REPEAT"].summary, text)
-        self.assertIn("아직 만들어진 명령어가 아닙니다", text)
+        self.assertIn("아직 만들어진 스킬이 아닙니다", text)
 
     def test_already_promoted_command_is_not_called_not_made_yet(self):
         """Would otherwise contradict the effect section right below it,
@@ -519,7 +608,7 @@ class ReportTest(unittest.TestCase):
             r["signals"] = [{"code": "CONTEXT_REPEAT", "detail": "", "wasted": 0}]
         text = render_month(_month(), records, promoted=frozenset({"project-brief"}))
         self.assertNotIn("project-brief` (아직 없음", text)
-        self.assertIn("이미 명령어로 만들어져", text)
+        self.assertIn("이미 스킬로 만들어져", text)
 
 
 def _promo(command: str, codes: list[str], baseline_count: int, days_ago: int,
@@ -682,8 +771,11 @@ class PromotionTest(unittest.TestCase):
         quoted = description_line[len("description: "):]
         self.assertEqual(_json.loads(quoted), skill.description)  # round-trips through real JSON/YAML parsing
 
-    def test_default_root_is_the_folder_claude_code_watches(self):
-        self.assertEqual(skills_root(), Path.home() / ".claude" / "skills")
+    def test_default_root_is_the_folder_codex_watches(self):
+        self.assertEqual(skills_root(), Path.home() / ".codex" / "skills")
+
+    def test_claude_root_remains_available_explicitly(self):
+        self.assertEqual(skills_root("claude"), Path.home() / ".claude" / "skills")
 
     def test_budget_is_enforced_not_just_documented(self):
         oversized = Skill("x", "s", tuple(f"rule {i}" for i in range(80)), ("X",), 5)

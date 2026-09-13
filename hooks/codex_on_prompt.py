@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Codex CLI UserPromptSubmit hook.
 
-Same judgment as ``on_prompt.py`` (Claude Code) -- ``ai_saver.gate.assess``
+Same judgment as ``on_prompt.py`` -- ``ai_saver.gate.assess``
 takes only prompt text, so it is the same function either way. Only the
 transport differs:
 
@@ -10,15 +10,8 @@ transport differs:
   * Codex accepts plain text on stdout as extra developer context -- no
     JSON envelope needed, unlike Claude Code's ``hookSpecificOutput``.
 
-AI_saver's Codex support stops here, deliberately. Codex's session JSONL
-(``~/.codex/sessions/.../rollout-*.jsonl``) has a schema this project has
-not verified closely enough to parse with confidence, and interactive
-sessions are documented as sometimes omitting token-count events entirely.
-Shipping a guessed parser would risk silently wrong numbers, which is worse
-than not shipping one -- so the monthly habit report stays Claude-Code-only
-for now. This hook still records every verdict to the shared ledger, so
-``calibrate`` (which only needs gate scores, not token counts) works the
-same for Codex users.
+Session aggregation is handled separately by ``codex_on_session_end.py``.
+This hook only makes the zero-model-call scope decision before work begins.
 
 Failure policy: never break the user's turn. Any error exits 0 in silence.
 """
@@ -46,7 +39,7 @@ def main() -> None:
     from ai_saver.profile import Profile
 
     profile = Profile.load()
-    # Same personal wiki as the Claude Code hook -- editing it once improves both.
+    # The Codex branch keeps its personal wiki under ~/.codex/ai-saver.
     verdict = assess(prompt, profile, options=optionwiki.load())
 
     try:

@@ -70,11 +70,11 @@ class Effect:
             return f"판단하기엔 이릅니다. {remain}일 더 지켜보세요."
         if self.verdict == "UNUSED":
             return (f"{self.days_since}일 동안 {self.used}번밖에 안 쓰였습니다. "
-                   f"지워도 됩니다 — ~/.claude/skills/{self.command}/ 폴더를 삭제하세요.")
+                   f"지워도 됩니다 — ~/.codex/skills/{self.command}/ 폴더를 삭제하세요.")
         if self.verdict == "WORKING":
             return f"효과가 있습니다 (하루 발생률 {self.drop}% 감소, 사용 {self.used}회). 계속 쓰세요."
         return (f"효과가 뚜렷하지 않습니다 (거의 그대로, 사용 {self.used}회). "
-               f"지워도 됩니다 — ~/.claude/skills/{self.command}/ 폴더를 삭제하세요.")
+               f"지워도 됩니다 — ~/.codex/skills/{self.command}/ 폴더를 삭제하세요.")
 
 
 def evaluate(records: Sequence[Mapping], now: datetime | None = None) -> list[Effect]:
@@ -125,7 +125,7 @@ def render(effects: Sequence[Effect]) -> str:
         return ""
     lines = ["## 승격한 명령어, 효과가 있었나", ""]
     for effect in sorted(effects, key=lambda e: e.command):
-        lines.append(f"- `/{effect.command}` — {effect.recommendation}")
+        lines.append(f"- `${effect.command}` — {effect.recommendation}")
     return "\n".join(lines) + "\n"
 
 

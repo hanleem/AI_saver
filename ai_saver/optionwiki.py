@@ -23,7 +23,7 @@ change, no redeploy, and it takes effect on the very next prompt because
 every hook invocation is a fresh process that reads the file fresh anyway.
 
 A brand-new install rarely means brand-new data: by the time someone sets
-this up, months of transcripts under ``~/.claude/projects/`` usually
+this up, months of transcripts under ``~/.codex/sessions/`` usually
 already exist. ``ensure()`` uses that -- day one opens with a documented
 summary of real recent habits instead of pretending no data exists.
 ``bootstrap_note`` only ever adds *facts* (counts, straight from the same
@@ -72,7 +72,7 @@ def ensure(root: Path | None = None, transcripts_root: Path | None = None) -> Pa
 
     ``transcripts_root`` exists so tests (and only tests) can point the
     bootstrap scan at an empty directory instead of this machine's real
-    ``~/.claude/projects/`` -- production code never passes it.
+    Codex history -- production code never passes it.
     """
     path = wiki_path(root)
     if not path.exists():
@@ -136,19 +136,23 @@ def bootstrap_note(months: int = BOOTSTRAP_MONTHS, transcripts_root: Path | None
     which a hook calls on every prompt, and seeding a file must never be
     allowed to break someone's turn.
 
-    ``transcripts_root`` defaults to the real ``~/.claude/projects/``
-    (``transcript.transcript_root()``); pass an empty directory in tests
-    so this never reads a real machine's actual history.
+    ``transcripts_root`` defaults to the real ``~/.codex/sessions/``.
+    Passing a directory explicitly keeps the legacy Claude transcript
+    adapter available for tests and migrations.
     """
     try:
         from collections import Counter
         from datetime import datetime, timedelta, timezone
 
         from .signals import CODES, detect
-        from .transcript import read_all_turns
 
         since = datetime.now(timezone.utc) - timedelta(days=30 * months)
-        turns = read_all_turns(transcripts_root, since=since)
+        if transcripts_root is None:
+            from .codex_transcript import read_all_codex_turns
+            turns = read_all_codex_turns(since=since)
+        else:
+            from .transcript import read_all_turns
+            turns = read_all_turns(transcripts_root, since=since)
         if not turns:
             return ""
         counts = Counter(f.code for f in detect(turns))

@@ -1,47 +1,21 @@
 # AI_saver 시작하기 — Codex 편
 
-프로그래밍을 몰라도 따라 할 수 있게 썼습니다. 명령어는 그대로 복사해서 붙여넣으면 됩니다.
+프로그래밍을 몰라도 그대로 복사해 쓸 수 있게 설명합니다. Codex에서도 실행 전 확인, 세션 종료 자동 집계, 과거 기록 분석, 월간 리포트, 보정, 스킬 승격을 지원합니다.
 
-## 먼저, 솔직하게: Codex에서 지금 되는 것 / 안 되는 것
+## 1. 준비와 내려받기
 
-| 기능 | Codex에서 |
-|---|---|
-| 막연한 요청 전에 "어디까지 할까요?" 물어보기 | **됩니다** |
-| 물어본 기록으로 개입 빈도 자동 조절 | **됩니다** |
-| "이번 달 이런 습관이 있었어요" 자동 리포트 | **아직 안 됩니다** (Claude Code 편만) |
+Python 3.10 이상인지 확인하고 저장소를 내려받습니다.
 
-이유는 기술적인 게 아니라 **신중해서**입니다. 자동 리포트를 만들려면 Codex가 남기는 대화 기록 파일을 읽어야 하는데, 그 파일 형식을 저희가 아직 확실하게 검증하지 못했습니다. 확실하지 않은 걸 읽어서 틀린 숫자를 보여주느니, 아예 안 보여주는 게 낫다고 판단했습니다. 확인되면 업데이트하겠습니다.
-
-지금 되는 기능(실행 전 확인)만으로도 충분히 쓸모 있습니다 — 막연한 요청을 하기 전에 한 번 멈춰서 범위를 정하게 해주는 것만으로도 시간이 꽤 절약됩니다.
-
-## 준비물
-
-- Codex CLI가 이미 설치돼 있어야 합니다.
-- Python이 컴퓨터에 있어야 합니다. 터미널에 아래를 쳐서 확인하세요.
-
-```bash
+```powershell
 python --version
+git clone --branch codex https://github.com/hanleem/AI_saver.git
 ```
 
-`Python 3.10` 이상이 나오면 됩니다. 없다면 [python.org](https://www.python.org/downloads/)에서 설치하세요(설치할 때 "Add python to PATH" 체크).
+## 2. Codex 훅 연결
 
-## 1. 내려받기
+`~`는 내 사용자 폴더입니다. Windows에서 `~/.codex/hooks.json`은 보통 `C:\Users\내이름\.codex\hooks.json`입니다. 파일이 없으면 새 텍스트 파일을 만들고 이름을 `hooks.json`으로 정합니다.
 
-Claude Code용과 달리 Codex는 아직 플러그인 설치 방식이 없어서, 폴더째 내려받습니다.
-
-```bash
-git clone https://github.com/hanleem/AI_saver.git
-```
-
-원하는 아무 폴더에서 이 명령을 치면 됩니다. 예를 들어 "문서" 폴더에서 쳤다면, 결과 폴더는 `문서\AI_saver`가 됩니다.
-
-> ⚠️ **이 경로를 적어두세요.** 2번, 4번 단계에서 그대로 다시 씁니다.
-
-## 2. 연결하기
-
-Codex 설정 폴더에 "이 프롬프트가 오면 이 스크립트를 실행해라"라고 알려줘야 합니다.
-
-`~/.codex/hooks.json` 파일을 엽니다(없으면 새로 만듭니다). 이미 다른 내용이 있다면 `"UserPromptSubmit"` 부분만 아래처럼 추가하고, 없다면 파일 전체를 아래 내용으로 채웁니다.
+아래 두 명령의 `내려받은 경로`를 실제 `AI_saver` 폴더로 바꿉니다. Python 명령이 여러 버전 중 잘못 잡히면 `python` 대신 Python 실행 파일의 전체 경로를 넣습니다.
 
 ```json
 {
@@ -56,76 +30,66 @@ Codex 설정 폴더에 "이 프롬프트가 오면 이 스크립트를 실행해
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"내려받은 경로/hooks/codex_on_session_end.py\"",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }
 ```
 
-`내려받은 경로` 자리에 1번에서 내려받은 실제 경로를 넣으세요. 예:
+저장한 뒤 Codex를 다시 시작합니다. Codex에서 `/hooks`를 열어 두 명령의 정확한 경로를 확인하고 신뢰(Trust)해야 새 훅이 실행됩니다.
 
-```json
-"command": "python \"C:/Users/나/문서/AI_saver/hooks/codex_on_prompt.py\""
-```
+## 3. 이미 쌓인 Codex 기록 분석
 
-이 파일 안에서는 경로를 큰따옴표(`"`)로 감싸는 게 맞습니다. 저장하고 Codex를 다시 시작하면 적용됩니다.
+PowerShell에서 저장소 폴더로 이동한 뒤 실행합니다.
 
-## 3. 2주 동안은 그냥 씁니다
-
-지금은 판정만 하고 조용히 기록만 합니다. 끼어들지 않습니다. 이 기간에 "얼마나 자주 개입하게 될지"를 미리 확인합니다.
-
-## 4. 2주 뒤 — 켜기
-
-여기서부터는 터미널에서 `ai_saver_cli.py`를 실행합니다. **1번에서 내려받은 폴더로 먼저 이동하세요** — 그래야 매번 긴 경로를 안 적어도 됩니다.
-
-```bash
+```powershell
 cd "내려받은 경로"
+python scripts/ai_saver_cli.py backfill --source codex
+python scripts/ai_saver_cli.py report -t
 ```
 
-이동했으면, 아래 두 줄을 그대로 순서대로 칩니다.
+`-t`는 입력·캐시·출력·추론 토큰 숫자까지 붙입니다. 빼면 초보자용 요약만 나옵니다. 원문 프롬프트는 기본적으로 저장하지 않고 12자 해시와 길이만 원장에 남깁니다.
 
-```bash
+## 4. 관찰 후 실행 전 확인 켜기
+
+기본값은 조용히 기록만 하는 관찰 모드입니다. 2주 정도 사용하고 다음을 실행합니다.
+
+```powershell
 python scripts/ai_saver_cli.py calibrate
 python scripts/ai_saver_cli.py gate on
 ```
 
-> ⚠️ **따옴표를 다시 넣지 마세요.** `cd`로 이미 그 폴더 안에 들어와 있으므로 `scripts/ai_saver_cli.py`만 쓰면 됩니다. 경로를 따옴표로 감싸다가 한쪽을 빠뜨리면 `can't open file '...ai_saver_cli.py calibrate'`처럼 명령어가 파일 이름에 붙어버리는 오류가 납니다.
+끄려면 `python scripts/ai_saver_cli.py gate off`를 실행합니다.
 
-켜고 나면 이렇게 막연한 요청을 할 때 Codex가 먼저 물어봅니다.
+## 5. 반복 습관을 Codex 스킬로 승격
 
-```
-전체 앱 디자인 다 예쁘게 바꿔줘
-```
-
-```
-⚠ 작업량이 클 수 있습니다
-
-A. 이 요소만 바꾸기      ★
-B. 이 화면 전체 맞추기   ★★   ← 추천
-C. 앱 전체 통일          ★★★★
-D. 먼저 시안만 보기      ★
+```powershell
+python scripts/ai_saver_cli.py promote --list
+python scripts/ai_saver_cli.py promote focus-file --platform codex
 ```
 
-뭘 골라야 할지 모르겠으면 추천(← 표시)을 고르면 됩니다.
+Codex에서는 `/focus-file` 대신 `$focus-file`로 스킬을 명시적으로 부릅니다. AI_saver 자체의 월간 분석 스킬을 설치했다면 `$ai-saver`라고 입력합니다.
 
-## 끄고 싶으면
+## 저장 위치와 개인정보
 
-같은 폴더 안에서:
-
-```bash
-python scripts/ai_saver_cli.py gate off
-```
-
-완전히 없애고 싶으면 `~/.codex/hooks.json`에서 추가했던 부분을 지우고, 내려받은 `AI_saver` 폴더를 삭제하면 됩니다.
-
-## 개인정보
-
-- 프롬프트 원문은 저장하지 않습니다. 짧은 지문(해시)만 남습니다.
-- 인터넷으로 아무것도 전송하지 않습니다. 전부 내 컴퓨터 안에서만 계산됩니다.
-- 기록은 `~/.claude/ai-saver/` 폴더에 저장됩니다(이름은 `.claude`지만 Codex 기록도 여기 같이 쌓입니다 — 사람 습관을 보는 도구라 도구별로 나누지 않았습니다).
+- 원장과 리포트: `~/.codex/ai-saver/` (Claude용 기록과 분리)
+- Codex 개인 스킬: `~/.codex/skills/`
+- 프롬프트 원문은 기본적으로 저장하지 않습니다.
+- 인터넷 전송 없이 로컬 파일만 읽고 씁니다.
 
 ## 막히면
 
-- 훅이 안 걸리는 것 같다 → `~/.codex/hooks.json` 안의 경로에 오타가 없는지, Codex를 재시작했는지 확인하세요.
-- `python`이 없다는 오류 → 파이썬 설치 후 터미널을 완전히 껐다 다시 켜세요.
-- `can't open file '...calibrate'`처럼 파일 이름 뒤에 명령어가 붙어 나오는 오류 → 4번 단계의 따옴표 경고를 보세요. `cd`로 폴더에 들어간 다음 따옴표 없이 치면 해결됩니다.
-- 그 외 → 오류 메시지를 그대로 복사해서 Codex에게 붙여넣고 물어보세요.
+- 훅이 안 도는 것 같으면 Codex를 다시 시작한 뒤 `/hooks`에서 경로와 신뢰 상태를 확인합니다.
+- `python` 버전이 예상과 다르면 Python 실행 파일 전체 경로를 사용합니다.
+- `can't open file` 오류가 나면 먼저 `cd "AI_saver의 실제 경로"`로 이동했는지 확인합니다.
+- 숫자가 비어 있으면 `backfill --source codex`를 먼저 실행합니다.

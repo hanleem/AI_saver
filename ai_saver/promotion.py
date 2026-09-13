@@ -116,12 +116,12 @@ PURPOSE: dict[str, Purpose] = {
     ),
     "CONTEXT_REPEAT": Purpose(
         "project-brief",
-        "프로젝트 설명을 매번 다시 안 쓰도록 CLAUDE.md를 먼저 읽는다.",
+        "프로젝트 설명을 매번 다시 안 쓰도록 AGENTS.md를 먼저 읽는다.",
         (
-            "작업 시작 전 프로젝트 루트의 CLAUDE.md(없으면 README.md)를 먼저 읽는다.",
+            "작업 시작 전 프로젝트 루트의 AGENTS.md(없으면 README.md)를 먼저 읽는다.",
             "거기 적힌 내용은 사용자가 다시 말하지 않아도 되므로 다시 묻지 않는다.",
-            "CLAUDE.md가 없는데 사용자가 프로젝트를 길게 설명했다면, 다음에 또 "
-            "설명할 필요 없도록 CLAUDE.md를 새로 만들지 물어본다.",
+            "AGENTS.md가 없는데 사용자가 프로젝트를 길게 설명했다면, 다음에 또 "
+            "설명할 필요 없도록 AGENTS.md를 새로 만들지 물어본다.",
         ),
         ("사용자가 프로젝트 설명을 이전과 비슷하게 다시 적으려는 순간",),
     ),
@@ -199,8 +199,8 @@ class Skill:
             raise ValueError(f"/{self.command}: description {len(self.description)}자 > 예산 {DESCRIPTION_LIMIT}자")
         return text
 
-    def write(self, root: Path | None = None) -> Path:
-        folder = (root or skills_root()) / self.command
+    def write(self, root: Path | None = None, platform: str = "codex") -> Path:
+        folder = (root or skills_root(platform)) / self.command
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "SKILL.md"
         path.write_text(self.render(), encoding="utf-8")
@@ -222,8 +222,10 @@ def _yaml_string(text: str) -> str:
     return json.dumps(text, ensure_ascii=False)
 
 
-def skills_root() -> Path:
-    """Personal skills folder Claude Code watches for live autocomplete."""
+def skills_root(platform: str = "codex") -> Path:
+    """Personal skills folder watched by the selected coding agent."""
+    if platform == "codex":
+        return Path.home() / ".codex" / "skills"
     return Path.home() / ".claude" / "skills"
 
 
