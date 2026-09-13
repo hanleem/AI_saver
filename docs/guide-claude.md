@@ -31,23 +31,53 @@ claude plugin install ai-saver@ai-saver
 
 이걸로 끝입니다. 아직 아무 일도 일어나지 않습니다 — AI_saver는 처음엔 **조용히 지켜보기만** 합니다.
 
+## 이 아래 명령어를 쓰는 두 가지 방법
+
+이 문서에는 `ai_saver_cli.py backfill` 같은 명령어가 여러 번 나옵니다. 둘 중 편한 쪽으로 하세요.
+
+### 방법 A — Claude Code에게 그대로 시키기 (제일 쉽고 실수가 없습니다)
+
+터미널을 직접 만지지 않고, **Claude Code 채팅창에 그대로 문장으로 말합니다.**
+
+> AI_saver의 backfill을 실행해줘
+
+Claude Code가 알아서 설치된 폴더를 찾아 실행해줍니다. 이 문서에서 `python ...py backfill` 같은 게 나오면, 그냥 `AI_saver의 backfill을 실행해줘`처럼 말로 바꿔서 채팅에 넣으면 됩니다. **이 글을 처음 읽는 분께는 이 방법을 권합니다.**
+
+### 방법 B — 터미널에 직접 치기
+
+터미널에 익숙하면 이 방법이 더 빠릅니다. **폴더 위치로 한 번만 이동해두면**, 그 뒤로는 경로를 매번 안 적어도 됩니다.
+
+```bash
+cd "AI_saver가 설치된 폴더"
+```
+
+설치된 폴더가 어딘지 모르면 Claude Code에게 물어보세요.
+
+> AI_saver 플러그인이 설치된 폴더 경로를 알려줘
+
+폴더로 이동했으면, 이 문서의 모든 명령어에서 `python ai_saver_cli.py ...`를 아래처럼 바꿔 씁니다.
+
+```bash
+python scripts/ai_saver_cli.py backfill
+```
+
+> ⚠️ **따옴표를 쓰지 마세요.** `"경로/scripts/ai_saver_cli.py" backfill`처럼 앞뒤에 따옴표를 넣다가 한쪽을 빠뜨리면, 파일 이름 뒤에 `backfill`까지 붙어버려서 `can't open file '...ai_saver_cli.py backfill'` 같은 오류가 납니다. 위처럼 **폴더로 이동한 다음, 따옴표 없이** 치면 이런 실수가 아예 안 생깁니다.
+
+아래부터는 방법 A(말로 시키기) 기준으로 설명합니다. 터미널로 직접 하실 분은 각 문장을 "방법 B" 명령어로 바꿔서 실행하세요.
+
 ## 2. 기준선 만들기 — 가장 먼저 할 일
 
 지금까지 Claude Code로 작업한 기록이 컴퓨터에 이미 있습니다. 그걸로 첫 리포트를 만들어봅니다.
 
-```bash
-python "AI_saver를 설치한 경로/scripts/ai_saver_cli.py" backfill
-```
+> AI_saver의 backfill을 실행해줘
 
-`AI_saver를 설치한 경로`가 어디인지 모르겠으면, Claude Code 안에서 이렇게 물어보세요:
+*(터미널: `python scripts/ai_saver_cli.py backfill`)*
 
-> AI_saver 플러그인이 설치된 폴더 경로를 알려줘
+끝나면 리포트를 봅니다.
 
-경로를 알아냈으면 그 뒤에 `report`를 붙여 리포트를 봅니다.
+> AI_saver의 이번 달 리포트를 보여줘
 
-```bash
-python "AI_saver를 설치한 경로/scripts/ai_saver_cli.py" report
-```
+*(터미널: `python scripts/ai_saver_cli.py report`)*
 
 **이 리포트에 토큰이니 뭐니 하는 숫자는 안 나옵니다.** "로그인 화면 고칠 때마다 파일을 6번 다시 읽었어요" 같은, 사람이 읽어서 바로 이해되는 문장으로 나옵니다.
 
@@ -57,16 +87,15 @@ python "AI_saver를 설치한 경로/scripts/ai_saver_cli.py" report
 
 지금 상태를 보고 싶으면:
 
-```bash
-python "...경로.../scripts/ai_saver_cli.py" status
-```
+> AI_saver 상태 보여줘
+
+*(터미널: `python scripts/ai_saver_cli.py status`)*
 
 ## 4. 2주 뒤 — 실행 전 확인 켜기
 
-```bash
-python "...경로.../scripts/ai_saver_cli.py" calibrate
-python "...경로.../scripts/ai_saver_cli.py" gate on
-```
+> AI_saver calibrate 실행하고, gate 켜줘
+
+*(터미널: `python scripts/ai_saver_cli.py calibrate` 다음 `python scripts/ai_saver_cli.py gate on`)*
 
 `calibrate`가 먼저 "이 정도 기준이면 전체 요청의 10% 정도만 끼어들겠다"로 기준을 맞춰줍니다. 그다음 `gate on`으로 켭니다.
 
@@ -89,13 +118,7 @@ D. 먼저 시안만 보기      ★
 
 ## 5. 매달 리포트 보기
 
-한 달에 한 번, 이렇게 물어보세요.
-
-```bash
-python "...경로.../scripts/ai_saver_cli.py" report
-```
-
-또는 Claude Code에게 바로 이렇게 말해도 됩니다.
+한 달에 한 번, 이렇게 말하세요.
 
 > 이번 달 AI_saver 리뷰 해줘
 
@@ -103,9 +126,9 @@ python "...경로.../scripts/ai_saver_cli.py" report
 
 ## 끄고 싶으면
 
-```bash
-python "...경로.../scripts/ai_saver_cli.py" gate off
-```
+> AI_saver gate 꺼줘
+
+*(터미널: `python scripts/ai_saver_cli.py gate off`)*
 
 완전히 지우고 싶으면:
 
@@ -123,5 +146,6 @@ claude plugin uninstall ai-saver
 ## 막히면
 
 - `python`이 없다는 오류 → 파이썬 설치 후 터미널을 완전히 껐다 다시 켜세요.
+- `can't open file '...backfill'`처럼 파일 이름 뒤에 명령어가 붙어 나오는 오류 → 위 "방법 B"의 따옴표 경고를 보세요. 폴더로 `cd`한 다음 따옴표 없이 치면 해결됩니다.
 - 리포트가 비어 있다는 오류 → `backfill`을 먼저 실행했는지 확인하세요.
-- 그 외 → Claude Code에게 오류 메시지를 그대로 붙여넣고 물어보세요. 이게 제일 빠릅니다.
+- 그 외 → 오류 메시지를 그대로 복사해서 Claude Code 채팅에 붙여넣고 물어보세요. 이게 제일 빠릅니다.

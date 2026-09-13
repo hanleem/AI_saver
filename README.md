@@ -93,6 +93,10 @@ Codex CLI에서 쓰려면 설치 방식이 다릅니다 — [Codex 편 가이드
 
 ## 처음 할 일 — 기준선부터
 
+> 아래 `.../`는 설치 경로를 줄여 쓴 표시입니다. 그대로 복사하면 동작하지 않습니다 —
+> 실제 경로로 바꿔 넣는 방법과, 따옴표를 잘못 넣었을 때 나는 오류(`can't open file '...py backfill'`)를 피하는 법은
+> [Claude Code 편 가이드](docs/guide-claude.md#이-아래-명령어를-쓰는-두-가지-방법)에 정리했습니다.
+
 ```bash
 python ~/.claude/plugins/.../ai-saver/scripts/ai_saver_cli.py backfill
 ```

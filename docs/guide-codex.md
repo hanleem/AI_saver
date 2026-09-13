@@ -33,7 +33,9 @@ Claude Code용과 달리 Codex는 아직 플러그인 설치 방식이 없어서
 git clone https://github.com/hanleem/AI_saver.git
 ```
 
-원하는 아무 폴더에 받으면 됩니다. 예를 들어 내 문서 폴더에 받았다면 경로는 `내 문서/AI_saver`가 됩니다. **이 경로를 기억해두세요. 아래에서 계속 씁니다.**
+원하는 아무 폴더에서 이 명령을 치면 됩니다. 예를 들어 "문서" 폴더에서 쳤다면, 결과 폴더는 `문서\AI_saver`가 됩니다.
+
+> ⚠️ **이 경로를 적어두세요.** 2번, 4번 단계에서 그대로 다시 씁니다.
 
 ## 2. 연결하기
 
@@ -65,7 +67,7 @@ Codex 설정 폴더에 "이 프롬프트가 오면 이 스크립트를 실행해
 "command": "python \"C:/Users/나/문서/AI_saver/hooks/codex_on_prompt.py\""
 ```
 
-저장하고 Codex를 다시 시작하면 적용됩니다.
+이 파일 안에서는 경로를 큰따옴표(`"`)로 감싸는 게 맞습니다. 저장하고 Codex를 다시 시작하면 적용됩니다.
 
 ## 3. 2주 동안은 그냥 씁니다
 
@@ -73,12 +75,20 @@ Codex 설정 폴더에 "이 프롬프트가 오면 이 스크립트를 실행해
 
 ## 4. 2주 뒤 — 켜기
 
-터미널에서:
+여기서부터는 터미널에서 `ai_saver_cli.py`를 실행합니다. **1번에서 내려받은 폴더로 먼저 이동하세요** — 그래야 매번 긴 경로를 안 적어도 됩니다.
 
 ```bash
-python "내려받은 경로/scripts/ai_saver_cli.py" calibrate
-python "내려받은 경로/scripts/ai_saver_cli.py" gate on
+cd "내려받은 경로"
 ```
+
+이동했으면, 아래 두 줄을 그대로 순서대로 칩니다.
+
+```bash
+python scripts/ai_saver_cli.py calibrate
+python scripts/ai_saver_cli.py gate on
+```
+
+> ⚠️ **따옴표를 다시 넣지 마세요.** `cd`로 이미 그 폴더 안에 들어와 있으므로 `scripts/ai_saver_cli.py`만 쓰면 됩니다. 경로를 따옴표로 감싸다가 한쪽을 빠뜨리면 `can't open file '...ai_saver_cli.py calibrate'`처럼 명령어가 파일 이름에 붙어버리는 오류가 납니다.
 
 켜고 나면 이렇게 막연한 요청을 할 때 Codex가 먼저 물어봅니다.
 
@@ -99,8 +109,10 @@ D. 먼저 시안만 보기      ★
 
 ## 끄고 싶으면
 
+같은 폴더 안에서:
+
 ```bash
-python "내려받은 경로/scripts/ai_saver_cli.py" gate off
+python scripts/ai_saver_cli.py gate off
 ```
 
 완전히 없애고 싶으면 `~/.codex/hooks.json`에서 추가했던 부분을 지우고, 내려받은 `AI_saver` 폴더를 삭제하면 됩니다.
@@ -115,4 +127,5 @@ python "내려받은 경로/scripts/ai_saver_cli.py" gate off
 
 - 훅이 안 걸리는 것 같다 → `~/.codex/hooks.json` 안의 경로에 오타가 없는지, Codex를 재시작했는지 확인하세요.
 - `python`이 없다는 오류 → 파이썬 설치 후 터미널을 완전히 껐다 다시 켜세요.
-- 그 외 → Codex에게 오류 메시지를 그대로 붙여넣고 물어보세요.
+- `can't open file '...calibrate'`처럼 파일 이름 뒤에 명령어가 붙어 나오는 오류 → 4번 단계의 따옴표 경고를 보세요. `cd`로 폴더에 들어간 다음 따옴표 없이 치면 해결됩니다.
+- 그 외 → 오류 메시지를 그대로 복사해서 Codex에게 붙여넣고 물어보세요.
