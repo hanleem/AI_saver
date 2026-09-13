@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,7 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from ai_saver.gate import assess  # noqa: E402
 from ai_saver.ledger import Ledger, turn_record  # noqa: E402
 from ai_saver.profile import Profile  # noqa: E402
-from ai_saver.report import render_month  # noqa: E402
+from ai_saver.promotion import (  # noqa: E402
+    PURPOSE, Skill, group_by_command, render_skill, skills_root,
+)
+from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
 from ai_saver.signals import detect  # noqa: E402
 from ai_saver.transcript import BUILD, EDIT, READ, ToolCall, Turn, read_turns  # noqa: E402
 
@@ -262,6 +266,44 @@ class CodexHookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
+class PromoteCliTest(unittest.TestCase):
+    """The actual command a person types, run as a real subprocess."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+        self.skills = Path(tempfile.mkdtemp())
+        self.cli = Path(__file__).resolve().parent.parent / "scripts" / "ai_saver_cli.py"
+        self.env = {**os.environ, "AI_SAVER_HOME": str(self.home), "PYTHONIOENCODING": "utf-8"}
+
+    def _seed(self, code: str, count: int) -> None:
+        records = [turn_record(_turn(f"p{code}{i}", "x", [])) for i in range(count)]
+        for r in records:
+            r["signals"] = [{"code": code, "detail": "", "wasted": 0}]
+        Ledger(root=self.home, profile=Profile()).append(records)
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(self.cli), *args],
+                              capture_output=True, text=True, encoding="utf-8", env=self.env)
+
+    def test_below_threshold_refuses(self):
+        self._seed("REDISCOVERY", SKILL_MIN - 1)
+        result = self._run("promote", "focus-file", "--root", str(self.skills))
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse((self.skills / "focus-file").exists())
+
+    def test_at_threshold_creates_the_real_file(self):
+        self._seed("REDISCOVERY", SKILL_MIN)
+        result = self._run("promote", "focus-file", "--root", str(self.skills))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.skills / "focus-file" / "SKILL.md").exists())
+        self.assertIn("focus-file", result.stdout)
+
+    def test_unknown_name_lists_what_exists_instead(self):
+        result = self._run("promote", "not-a-real-thing", "--root", str(self.skills))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("focus-file", result.stdout)
+
+
 class ReportTest(unittest.TestCase):
     def test_no_raw_token_numbers_for_beginners(self):
         records = [turn_record(_turn("p1", "고쳐줘", [ToolCall("Read", READ, "a.py")] * 3))]
@@ -277,6 +319,61 @@ class ReportTest(unittest.TestCase):
 
     def test_empty_month_says_what_to_do(self):
         self.assertIn("backfill", render_month("2026-09", []))
+
+    def test_candidate_explains_what_it_would_do_and_that_it_is_not_real_yet(self):
+        """The exact gap a real user hit: a bare name like /project-brief with
+        no explanation and nothing actually created."""
+        records = [turn_record(_turn(f"p{i}", "고쳐줘", [])) for i in range(5)]
+        for r in records:
+            r["signals"] = [{"code": "CONTEXT_REPEAT", "detail": "", "wasted": 0}]
+        text = render_month(_month(), records)
+        self.assertIn("project-brief", text)
+        self.assertIn(PURPOSE["CONTEXT_REPEAT"].summary, text)
+        self.assertIn("아직 만들어진 명령어가 아닙니다", text)
+
+
+class PromotionTest(unittest.TestCase):
+    def test_shared_command_merges_without_duplicate_rules(self):
+        skill = render_skill(["SCOPE_BLOWUP", "VAGUE_SCOPE"], {"SCOPE_BLOWUP": 4, "VAGUE_SCOPE": 3})
+        self.assertEqual(skill.command, "scoped-edit")
+        self.assertEqual(skill.occurrences, 7)
+        self.assertEqual(len(skill.rules), len(set(skill.rules)))  # no duplicates
+
+    def test_write_makes_a_real_autocompleting_file(self):
+        root = Path(tempfile.mkdtemp())
+        skill = render_skill(["REDISCOVERY"], {"REDISCOVERY": 6})
+        path = skill.write(root)
+        self.assertEqual(path, root / "focus-file" / "SKILL.md")
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("name: focus-file", text)
+        self.assertIn(PURPOSE["REDISCOVERY"].summary, text)
+
+    def test_default_root_is_the_folder_claude_code_watches(self):
+        self.assertEqual(skills_root(), Path.home() / ".claude" / "skills")
+
+    def test_budget_is_enforced_not_just_documented(self):
+        oversized = Skill("x", "s", tuple(f"rule {i}" for i in range(80)), ("X",), 5)
+        with self.assertRaises(ValueError):
+            oversized.render()
+
+    def test_unknown_code_is_rejected(self):
+        with self.assertRaises(ValueError):
+            render_skill(["NOPE"], {})
+
+    def test_grouping_matches_what_the_report_and_cli_both_use(self):
+        groups = group_by_command(["REDISCOVERY", "SCOPE_BLOWUP", "VAGUE_SCOPE"])
+        self.assertEqual(set(groups), {"focus-file", "scoped-edit"})
+        self.assertEqual(set(groups["scoped-edit"]), {"SCOPE_BLOWUP", "VAGUE_SCOPE"})
+
+
+class HabitCountsTest(unittest.TestCase):
+    def test_counts_only_turn_records(self):
+        records = [
+            turn_record(_turn("p1", "x", [])),
+            {"kind": "gate", "id": "g1"},
+        ]
+        records[0]["signals"] = [{"code": "BUILD_LOOP", "detail": "", "wasted": 0}]
+        self.assertEqual(habit_counts(records), Counter({"BUILD_LOOP": 1}))
 
 
 def _month() -> str:

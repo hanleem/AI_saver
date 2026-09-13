@@ -15,9 +15,10 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Mapping, Sequence
 
+from .promotion import group_by_command, purpose_of
 from .signals import CODES
 
-__all__ = ["render_month", "SKILL_MIN"]
+__all__ = ["render_month", "habit_counts", "SKILL_MIN"]
 
 SKILL_MIN = 5  # same habit this many times before a /command is worth proposing
 
@@ -60,7 +61,7 @@ def render_month(month: str, records: Sequence[Mapping], technical: bool = False
         return f"# AI_saver — {month}\n\n아직 기록이 없습니다. `ai-saver backfill`을 먼저 돌려 주세요.\n"
 
     findings = [(s, r) for r in turns for s in r.get("signals") or []]
-    counts = Counter(s["code"] for s, _ in findings)
+    counts = habit_counts(records)
     total_cost = sum(float(r.get("cost") or 0) for r in turns) or 1.0
     wasted = sum(float(s.get("wasted") or 0) for s, _ in findings)
     touched = len({r.get("id") for _, r in findings})
@@ -86,15 +87,23 @@ def render_month(month: str, records: Sequence[Mapping], technical: bool = False
         out.append(f"- 다음엔 이렇게: {advice}")
         out.append("")
 
-    candidates = [(code, count) for code, count in counts.most_common() if count >= SKILL_MIN]
+    eligible = [code for code, count in counts.items() if count >= SKILL_MIN]
     out.append("## /명령어 후보")
     out.append("")
-    if candidates:
-        for code, count in candidates:
-            out.append(f"- `{_command_name(code)}` — 같은 상황이 {count}번. "
-                       f"규칙을 한 번 정해두면 매번 안 적어도 됩니다.")
+    out.append("**아직 만들어진 명령어가 아닙니다.** 아래는 '이 규칙을 명령어로 "
+               "만들면 좋겠다'는 제안이고, `/`를 쳐도 자동완성에 뜨지 않습니다. "
+               "실제로 만들려면 맨 아래 방법을 따라 승격하세요.")
+    out.append("")
+    if eligible:
+        for command, codes in group_by_command(eligible).items():
+            count = sum(counts[code] for code in codes)
+            summary = purpose_of(codes[0]).summary
+            out.append(f"### `/{command}` (아직 없음, {count}번 반복)")
+            out.append(f"- 만들어지면 하는 일: {summary}")
         out.append("")
-        out.append("승격하려면 `skill-promote` skill을 부르세요. "
+        out.append("승격하려면 `skill-promote` skill을 부르세요 (채팅에 "
+                   "\"skill-promote 해줘\"라고 말하면 됩니다). "
+                   "실제 `SKILL.md` 파일을 만들어서, 만든 즉시 `/`에 나타납니다. "
                    "상시 비용이 절감보다 크면 만들지 않습니다.")
     else:
         out.append(f"아직 없습니다. 같은 습관이 {SKILL_MIN}번 이상 반복돼야 후보가 됩니다.")
@@ -151,13 +160,12 @@ def _share(part: float, whole: float) -> str:
     return f"{round(100 * part / whole)}%"
 
 
-def _command_name(code: str) -> str:
-    return {
-        "REDISCOVERY": "/focus-file",
-        "SCOPE_BLOWUP": "/small-edit",
-        "BUILD_LOOP": "/quick-test",
-        "THRASH": "/ui-edit",
-        "CONTEXT_REPEAT": "/project-brief",
-        "VAGUE_SCOPE": "/scoped-edit",
-        "UNDERSCOPED_FAIL": "/wider-edit",
-    }.get(code, "/" + code.lower().replace("_", "-"))
+def habit_counts(records: Sequence[Mapping]) -> Counter:
+    """How many times each detector fired, across every turn in ``records``.
+
+    Public so ``promote`` can ask "does this code really have enough
+    occurrences?" using the exact same count the report shows -- one
+    number, not two implementations that could drift apart.
+    """
+    turns = [r for r in records if r.get("kind") == "turn"]
+    return Counter(s["code"] for r in turns for s in r.get("signals") or [])

@@ -6,6 +6,8 @@
     python ai_saver_cli.py calibrate              keep interruptions rare
     python ai_saver_cli.py gate on|off            leave or exit shadow mode
     python ai_saver_cli.py status                 what AI_saver knows so far
+    python ai_saver_cli.py promote --list         which habits qualify
+    python ai_saver_cli.py promote focus-file     write the skill -- makes /focus-file real
 
 backfill is the one to run first: the transcripts are already on disk, so a
 baseline exists before the tool changes anything. Without that baseline
@@ -23,9 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ai_saver.ledger import Ledger, turn_record  # noqa: E402
 from ai_saver.profile import Profile, data_root  # noqa: E402
-from ai_saver.report import render_month  # noqa: E402
+from ai_saver.promotion import PURPOSE, group_by_command, render_skill, skills_root  # noqa: E402
+from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
 from ai_saver.signals import detect  # noqa: E402
 from ai_saver.transcript import read_all_turns, transcript_root  # noqa: E402
+
+PROMOTION_WINDOW_DAYS = 30
 
 
 def backfill(args) -> int:
@@ -84,6 +89,53 @@ def gate(args) -> int:
     return 0
 
 
+def _recent_records(ledger: Ledger, days: int = PROMOTION_WINDOW_DAYS) -> list[dict]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    records = [r for month in ledger.months() for r in ledger.month(month)]
+    return [r for r in records if str(r.get("ts") or "") >= cutoff]
+
+
+def promote(args) -> int:
+    ledger = Ledger(profile=Profile.load())
+    recent = _recent_records(ledger)
+    counts = habit_counts(recent)
+
+    if args.list:
+        eligible = {code: n for code, n in counts.items() if n >= SKILL_MIN}
+        if not eligible:
+            print(f"최근 {PROMOTION_WINDOW_DAYS}일간 {SKILL_MIN}번 이상 반복된 습관이 없습니다.")
+            return 0
+        for command, codes in group_by_command(list(eligible)).items():
+            total = sum(eligible.get(c, 0) for c in codes)
+            print(f"/{command} — 최근 {PROMOTION_WINDOW_DAYS}일간 {total}번  "
+                  f"(python {Path(__file__).name} promote {command})")
+        return 0
+
+    if not args.command:
+        print("어떤 걸 승격할지 지정하세요. 후보를 보려면: promote --list")
+        return 1
+
+    wanted = args.command.lstrip("/")
+    codes = [code for code, purpose in PURPOSE.items() if purpose.command == wanted]
+    if not codes:
+        known = sorted({p.command for p in PURPOSE.values()})
+        print(f"'{wanted}'은 모르는 이름입니다. 가능한 것: {', '.join(known)}")
+        return 1
+
+    total = sum(counts.get(code, 0) for code in codes)
+    if total < SKILL_MIN and not args.force:
+        print(f"최근 {PROMOTION_WINDOW_DAYS}일간 {total}번뿐입니다 (기준 {SKILL_MIN}번). "
+              f"더 반복된 뒤에 다시 시도하세요. 그래도 지금 만들려면 --force를 붙이세요.")
+        return 1
+
+    skill = render_skill(codes, counts)
+    path = skill.write(Path(args.root) if args.root else None)
+    print(f"만들었습니다: {path}")
+    print(f"지금 Claude Code에서 `/{skill.command}` 을 쳐보세요 — 자동완성에 바로 뜹니다.")
+    print(f"하는 일: {skill.summary}")
+    return 0
+
+
 def status(args) -> int:
     profile = Profile.load()
     ledger = Ledger(profile=profile)
@@ -126,6 +178,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p = subparsers.add_parser("status", help="현재 상태")
     p.set_defaults(func=status)
+
+    p = subparsers.add_parser("promote", help="반복 습관을 실제 /명령어로 만들기")
+    p.add_argument("command", nargs="?", default="", help="예: focus-file")
+    p.add_argument("--list", action="store_true", help="후보만 보기")
+    p.add_argument("--force", action="store_true", help="기준 미달이어도 만들기")
+    p.add_argument("--root", default="", help="테스트용: 다른 폴더에 쓰기")
+    p.set_defaults(func=promote)
 
     args = parser.parse_args(argv)
     return args.func(args)

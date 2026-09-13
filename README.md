@@ -39,10 +39,13 @@
 
 ## /명령어 후보
 
-- `/focus-file` — 같은 상황이 9번. 규칙을 한 번 정해두면 매번 안 적어도 됩니다.
+아직 만들어진 명령어가 아닙니다. `/`를 쳐도 뜨지 않습니다.
 
-승격하려면 `skill-promote` skill을 부르세요. 상시 비용이 절감보다 크면
-만들지 않습니다.
+### `/focus-file` (아직 없음, 9번 반복)
+- 만들어지면 하는 일: 지목한 파일만 읽고, 그 파일을 다시 열지 않는다.
+
+승격하려면 `skill-promote` skill을 부르세요. 실제 SKILL.md 파일을 만들어서,
+만든 즉시 `/`에 나타납니다. 상시 비용이 절감보다 크면 만들지 않습니다.
 ```
 
 실행 전 확인은 위험한 요청에만 뜹니다:
@@ -110,6 +113,8 @@ python .../ai_saver_cli.py report -t       # 숫자 부록까지
 python .../ai_saver_cli.py status          # 현재 상태
 python .../ai_saver_cli.py calibrate       # 개입 빈도 조정
 python .../ai_saver_cli.py gate on|off     # 실행 전 확인 켜기/끄기
+python .../ai_saver_cli.py promote --list  # 승격 후보 보기
+python .../ai_saver_cli.py promote <이름>  # 실제 SKILL.md 생성 -- 그 즉시 /<이름> 이 뜬다
 ```
 
 ## 적용 범위 — 전역, 단 처음 2주는 관찰만
@@ -158,7 +163,7 @@ python .../ai_saver_cli.py gate on
 ## 개발
 
 ```bash
-python tests/test_ai_saver.py     # 28 tests
+python tests/test_ai_saver.py     # 39 tests
 ```
 
 MIT.
