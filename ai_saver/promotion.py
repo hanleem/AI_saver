@@ -41,7 +41,8 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
 __all__ = ["Purpose", "Skill", "PURPOSE", "purpose_of", "render_skill", "skills_root",
-          "group_by_command", "usage_counts", "live_commands"]
+          "group_by_command", "usage_counts", "live_commands",
+          "TEXT_OPTIMIZER_SKILL", "text_optimizer_available"]
 
 DESCRIPTION_LIMIT = 500
 BODY_LINE_LIMIT = 60
@@ -300,3 +301,19 @@ def live_commands(root: Path | None = None) -> set[str]:
     if not base.exists():
         return set()
     return {p.name for p in base.iterdir() if (p / "SKILL.md").exists()}
+
+
+TEXT_OPTIMIZER_SKILL = "text-optimizer"
+
+
+def text_optimizer_available(root: Path | None = None) -> bool:
+    """Whether the external ``text-optimizer`` skill is installed.
+
+    A Python subprocess cannot invoke a Claude skill -- that runs the
+    model, and this CLI has none. So this is as far as ``promote`` itself
+    goes: detect (free, mechanical) and report. Whoever is driving the
+    promotion -- a person, or ``skill-promote`` run by Claude -- decides
+    whether the small compression pass is worth the tokens and, if so,
+    actually invokes the skill on the new file.
+    """
+    return TEXT_OPTIMIZER_SKILL in live_commands(root)

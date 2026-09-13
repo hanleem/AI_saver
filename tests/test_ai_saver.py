@@ -19,7 +19,8 @@ from ai_saver.gate import DEFAULT_OPTIONS, Option, assess  # noqa: E402
 from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
 from ai_saver.profile import Profile  # noqa: E402
 from ai_saver.promotion import (  # noqa: E402
-    PURPOSE, Skill, group_by_command, live_commands, render_skill, skills_root, usage_counts,
+    PURPOSE, Skill, group_by_command, live_commands, render_skill, skills_root,
+    text_optimizer_available, usage_counts,
 )
 from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
 from ai_saver.signals import detect  # noqa: E402
@@ -724,6 +725,18 @@ class PromotionTest(unittest.TestCase):
 
     def test_live_commands_empty_when_nothing_promoted_yet(self):
         self.assertEqual(live_commands(Path(tempfile.mkdtemp())), set())
+
+    def test_text_optimizer_detected_only_when_actually_present(self):
+        """promote can only detect this (free) -- a Python subprocess has no
+        way to invoke a Claude skill itself, which is why this stops at
+        detection rather than actually compressing anything."""
+        empty = Path(tempfile.mkdtemp())
+        self.assertFalse(text_optimizer_available(empty))
+
+        with_it = Path(tempfile.mkdtemp())
+        (with_it / "text-optimizer").mkdir()
+        (with_it / "text-optimizer" / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+        self.assertTrue(text_optimizer_available(with_it))
 
 
 class HabitCountsTest(unittest.TestCase):

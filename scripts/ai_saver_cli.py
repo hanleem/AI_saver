@@ -30,7 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from ai_saver import effect, optionwiki  # noqa: E402
 from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
 from ai_saver.profile import Profile, data_root  # noqa: E402
-from ai_saver.promotion import PURPOSE, group_by_command, render_skill, skills_root  # noqa: E402
+from ai_saver.promotion import (  # noqa: E402
+    PURPOSE, group_by_command, render_skill, skills_root, text_optimizer_available,
+)
 from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
 from ai_saver.signals import detect  # noqa: E402
 from ai_saver.transcript import read_all_turns, transcript_root  # noqa: E402
@@ -149,6 +151,14 @@ def promote(args) -> int:
     print(f"지금 Claude Code에서 `/{skill.command}` 을 쳐보세요 — 자동완성에 바로 뜹니다.")
     print(f"하는 일: {skill.summary}")
     print(f"{effect.MIN_OBSERVATION_DAYS}일 뒤부터 리포트에 효과가 있었는지 자동으로 나옵니다.")
+
+    # promote itself never calls a model -- it can only detect that
+    # text-optimizer exists (a file-system check, still free) and name it as
+    # an option. Whether it's worth the tokens on a file this small is a
+    # judgment call for whoever is driving this, not something the CLI decides.
+    if text_optimizer_available():
+        print(f"참고: text-optimizer skill이 설치돼 있습니다. "
+              f"이 문구를 더 줄이고 싶으면 그 skill로 {path}를 검토해보세요.")
     return 0
 
 
