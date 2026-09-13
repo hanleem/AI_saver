@@ -122,11 +122,23 @@ class Skill:
     sources: tuple[str, ...]  # which detector codes fed this file
     occurrences: int
 
+    @property
+    def description(self) -> str:
+        """The line Claude Code shows next to the name in `/` autocomplete.
+
+        Leads with "AI_saver가 만듦" and the count on purpose -- the plain
+        rule text alone ("지목한 파일만 읽는다") doesn't say why this command
+        exists or that it came from real, counted repetition, and that is
+        exactly what a person scanning the list needs to decide whether to
+        use it.
+        """
+        return f"AI_saver 자동 생성 ({self.occurrences}회 감지) -- {self.summary}"
+
     def render(self) -> str:
         body = [
             "---",
             f"name: {self.command}",
-            f"description: {self.summary}",
+            f"description: {self.description}",
             "---",
             "",
             f"AI_saver가 지난 기록에서 같은 습관을 {self.occurrences}번 감지해 만들었습니다.",
@@ -137,8 +149,8 @@ class Skill:
         lines = text.count("\n")
         if lines > BODY_LINE_LIMIT:
             raise ValueError(f"/{self.command}: 본문 {lines}줄 > 예산 {BODY_LINE_LIMIT}줄")
-        if len(self.summary) > DESCRIPTION_LIMIT:
-            raise ValueError(f"/{self.command}: description {len(self.summary)}자 > 예산 {DESCRIPTION_LIMIT}자")
+        if len(self.description) > DESCRIPTION_LIMIT:
+            raise ValueError(f"/{self.command}: description {len(self.description)}자 > 예산 {DESCRIPTION_LIMIT}자")
         return text
 
     def write(self, root: Path | None = None) -> Path:

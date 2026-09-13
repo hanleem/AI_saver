@@ -544,6 +544,15 @@ class PromotionTest(unittest.TestCase):
         self.assertIn("name: focus-file", text)
         self.assertIn(PURPOSE["REDISCOVERY"].summary, text)
 
+    def test_description_shown_in_autocomplete_says_why_not_just_what(self):
+        """A bare rule sentence doesn't tell someone scanning `/` that this
+        command exists because a real habit repeated a counted number of
+        times -- that context is exactly what belongs next to the name."""
+        skill = render_skill(["REDISCOVERY"], {"REDISCOVERY": 123})
+        self.assertIn("123회", skill.description)
+        self.assertIn(PURPOSE["REDISCOVERY"].summary, skill.description)
+        self.assertIn(f"description: {skill.description}", skill.render())
+
     def test_default_root_is_the_folder_claude_code_watches(self):
         self.assertEqual(skills_root(), Path.home() / ".claude" / "skills")
 
@@ -551,6 +560,14 @@ class PromotionTest(unittest.TestCase):
         oversized = Skill("x", "s", tuple(f"rule {i}" for i in range(80)), ("X",), 5)
         with self.assertRaises(ValueError):
             oversized.render()
+
+    def test_description_budget_checks_the_actual_rendered_line(self):
+        """The check must guard the composed description (with the count
+        prefix), not just the raw summary -- that prefix is what actually
+        ends up in the frontmatter line Claude Code reads."""
+        borderline = Skill("x", "s" * 490, ("rule",), ("X",), 5)  # fits alone, not with the prefix
+        with self.assertRaises(ValueError):
+            borderline.render()
 
     def test_unknown_code_is_rejected(self):
         with self.assertRaises(ValueError):
