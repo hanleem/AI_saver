@@ -13,6 +13,20 @@ report) just prints whatever verdict comes back.
 Judging too early is worse than not judging: a skill needs a couple of
 weeks of real use before a drop (or its absence) means anything, so a
 fresh promotion reads as "too soon" rather than a false pass or fail.
+
+Two independent questions get asked, not one:
+
+  - did the underlying HABIT shrink (the rate comparison this module has
+    always done)?
+  - was the COMMAND itself actually used (straight from the transcript's
+    ``attributionSkill`` field, via ``promotion.usage_counts``)?
+
+A command can pass the first and fail the second (the habit improved for
+some unrelated reason while nobody ever typed the command), and a command
+barely used yet may still be too young to have moved the habit rate. Usage
+is checked first: "essentially never used" is a simpler, more direct
+verdict than a rate computation, and one that doesn't need the rate
+question answered at all.
 """
 
 from __future__ import annotations
@@ -21,12 +35,16 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Mapping, Sequence
 
-__all__ = ["Effect", "evaluate", "render", "MIN_OBSERVATION_DAYS"]
+__all__ = ["Effect", "evaluate", "render", "MIN_OBSERVATION_DAYS", "UNUSED_MIN_DAYS", "UNUSED_MAX_USES"]
 
 MIN_OBSERVATION_DAYS = 14
 # The habit's daily rate must fall to at most this fraction of its baseline
 # rate to call the skill working. Anything short of that is noise, not proof.
 WORKING_THRESHOLD = 0.7
+# A command used this many times or fewer, a full review cycle after it was
+# made, has not earned its standing cost regardless of what the habit rate says.
+UNUSED_MIN_DAYS = 30
+UNUSED_MAX_USES = 1
 
 
 @dataclass(frozen=True)
@@ -36,7 +54,8 @@ class Effect:
     days_since: int
     baseline_per_day: float
     current_per_day: float
-    verdict: str  # "TOO_SOON" | "WORKING" | "NOT_WORKING"
+    used: int
+    verdict: str  # "TOO_SOON" | "UNUSED" | "WORKING" | "NOT_WORKING"
 
     @property
     def drop(self) -> int:
@@ -49,9 +68,12 @@ class Effect:
         if self.verdict == "TOO_SOON":
             remain = MIN_OBSERVATION_DAYS - self.days_since
             return f"판단하기엔 이릅니다. {remain}일 더 지켜보세요."
+        if self.verdict == "UNUSED":
+            return (f"{self.days_since}일 동안 {self.used}번밖에 안 쓰였습니다. "
+                   f"지워도 됩니다 — ~/.claude/skills/{self.command}/ 폴더를 삭제하세요.")
         if self.verdict == "WORKING":
-            return f"효과가 있습니다 (하루 발생률 {self.drop}% 감소). 계속 쓰세요."
-        return (f"효과가 뚜렷하지 않습니다 (거의 그대로). "
+            return f"효과가 있습니다 (하루 발생률 {self.drop}% 감소, 사용 {self.used}회). 계속 쓰세요."
+        return (f"효과가 뚜렷하지 않습니다 (거의 그대로, 사용 {self.used}회). "
                f"지워도 됩니다 — ~/.claude/skills/{self.command}/ 폴더를 삭제하세요.")
 
 
@@ -65,6 +87,7 @@ def evaluate(records: Sequence[Mapping], now: datetime | None = None) -> list[Ef
         promoted_at = _parse(promo["ts"])
         if promoted_at is None:
             continue
+        command = promo["command"]
         codes = tuple(promo.get("codes") or ())
         days_since = max((now - promoted_at).days, 0)
 
@@ -78,15 +101,22 @@ def evaluate(records: Sequence[Mapping], now: datetime | None = None) -> list[Ef
         )
         current_per_day = after_count / days_since if days_since > 0 else 0.0
 
+        used = sum(
+            1 for r in turns
+            if command in (r.get("skills") or []) and _after(r.get("ts"), promoted_at)
+        )
+
         if days_since < MIN_OBSERVATION_DAYS:
             verdict = "TOO_SOON"
+        elif days_since >= UNUSED_MIN_DAYS and used <= UNUSED_MAX_USES:
+            verdict = "UNUSED"
         elif baseline_per_day <= 0 or current_per_day <= baseline_per_day * WORKING_THRESHOLD:
             verdict = "WORKING"
         else:
             verdict = "NOT_WORKING"
 
-        effects.append(Effect(promo["command"], codes, days_since, baseline_per_day,
-                              current_per_day, verdict))
+        effects.append(Effect(command, codes, days_since, baseline_per_day,
+                              current_per_day, used, verdict))
     return effects
 
 

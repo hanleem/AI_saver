@@ -92,6 +92,7 @@ class Turn:
     tokens: TokenUse = field(default_factory=TokenUse)
     calls: list[ToolCall] = field(default_factory=list)
     choices: list[str] = field(default_factory=list)  # options picked when the gate asked
+    skills_used: set[str] = field(default_factory=set)  # from assistant entries' attributionSkill
 
     @property
     def cost(self) -> float:
@@ -172,6 +173,13 @@ def read_turns(path: Path) -> list[Turn]:
             current.ended_at = stamp
 
         message = entry.get("message") or {}
+
+        # Claude Code stamps which skill was active on the assistant entry
+        # itself -- the direct "was /command actually used" signal, not
+        # something inferred from the prompt text.
+        skill = entry.get("attributionSkill")
+        if skill:
+            current.skills_used.add(str(skill))
 
         # One API response is split across several transcript lines (thinking,
         # text, each tool_use) and EVERY line repeats the same usage record.

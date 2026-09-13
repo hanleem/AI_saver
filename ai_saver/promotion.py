@@ -35,11 +35,13 @@ from __future__ import annotations
 
 import json
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
-__all__ = ["Purpose", "Skill", "PURPOSE", "purpose_of", "render_skill", "skills_root"]
+__all__ = ["Purpose", "Skill", "PURPOSE", "purpose_of", "render_skill", "skills_root",
+          "group_by_command", "usage_counts", "live_commands"]
 
 DESCRIPTION_LIMIT = 500
 BODY_LINE_LIMIT = 60
@@ -266,3 +268,33 @@ def group_by_command(codes: Iterable[str]) -> dict[str, list[str]]:
             continue
         groups.setdefault(purpose.command, []).append(code)
     return groups
+
+
+def usage_counts(records: Sequence[Mapping]) -> Counter:
+    """How many turns actually had each command active, straight from the
+    transcript's own ``attributionSkill`` field.
+
+    This is a different question from ``effect.evaluate``'s "did the habit
+    shrink" -- a command nobody types is dead weight even if the underlying
+    habit happened to improve some other way, and a command whose habit
+    hasn't dropped yet might still be in daily use. Both signals matter;
+    neither substitutes for the other.
+
+    Only present on turns recorded after this field existed -- older ledger
+    entries have no "skills" key and simply contribute nothing, the same
+    way a brand-new signal always starts at zero rather than raising.
+    """
+    counts: Counter = Counter()
+    for record in records:
+        if record.get("kind") != "turn":
+            continue
+        counts.update(record.get("skills") or [])
+    return counts
+
+
+def live_commands(root: Path | None = None) -> set[str]:
+    """Which promoted commands actually exist on disk right now."""
+    base = root or skills_root()
+    if not base.exists():
+        return set()
+    return {p.name for p in base.iterdir() if (p / "SKILL.md").exists()}

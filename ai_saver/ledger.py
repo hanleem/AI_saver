@@ -130,6 +130,7 @@ def turn_record(turn: Turn, findings: Sequence[Finding] = ()) -> dict:
         "reads": len(turn.targets(READ)),
         "edits": len(turn.targets(EDIT)),
         "builds": len(turn.targets(BUILD)),
+        "skills": sorted(turn.skills_used),
         "seconds": round(turn.seconds, 1),
         "signals": [
             {"code": f.code, "detail": f.detail, "wasted": round(f.wasted, 1)} for f in mine

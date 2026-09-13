@@ -2,12 +2,13 @@
 
 Interface
 ---------
-    wiki_path(root=None)   -> Path      -- the personal, editable copy
-    ensure(root=None)      -> Path      -- seeds it from DEFAULT_OPTIONS on first use
-    load(root=None)        -> dict[str, tuple[Option, ...]]
-    reset(root=None)       -> Path      -- overwrite the personal copy back to defaults
-    render(table)          -> str       -- table -> markdown, with a table of contents
-    parse(text)            -> dict[str, tuple[Option, ...]]
+    wiki_path(root=None)      -> Path      -- the personal, editable copy
+    ensure(root=None)         -> Path      -- seeds it (history-aware) on first use
+    load(root=None)           -> dict[str, tuple[Option, ...]]
+    reset(root=None)          -> Path      -- overwrite the personal copy back to defaults
+    render(table)             -> str       -- table -> markdown, with a table of contents
+    parse(text)               -> dict[str, tuple[Option, ...]]
+    bootstrap_note(months=3)  -> str       -- what history already shows, for a first-run seed
 
 ``gate.assess()`` stays pure -- it never touches disk. This module is where
 the disk read lives: a hook calls ``load()`` once per prompt and passes the
@@ -20,6 +21,17 @@ review can read ``wiki stats`` (which recommendations people actually
 followed, where they diverged) and edit the wording directly -- no code
 change, no redeploy, and it takes effect on the very next prompt because
 every hook invocation is a fresh process that reads the file fresh anyway.
+
+A brand-new install rarely means brand-new data: by the time someone sets
+this up, months of transcripts under ``~/.claude/projects/`` usually
+already exist. ``ensure()`` uses that -- day one opens with a documented
+summary of real recent habits instead of pretending no data exists.
+``bootstrap_note`` only ever adds *facts* (counts, straight from the same
+detectors the monthly review uses), never rewritten option wording: this
+module runs from a hook, with no model in the loop at all, and rewriting
+the actual A/B/C/D text is a judgment call that belongs to the reviewer
+(human or model) reading this note -- the same call this project always
+keeps separate from mechanical measurement.
 """
 
 from __future__ import annotations
@@ -31,7 +43,10 @@ from typing import Mapping, Sequence
 from .gate import DEFAULT_OPTIONS, Option
 from .profile import data_root
 
-__all__ = ["wiki_path", "ensure", "load", "reset", "render", "parse"]
+__all__ = ["wiki_path", "ensure", "load", "reset", "render", "parse", "bootstrap_note",
+          "BOOTSTRAP_MONTHS"]
+
+BOOTSTRAP_MONTHS = 3
 
 _PREAMBLE = (
     "실행 전 확인(게이트)이 보여주는 4지선다 문구입니다.\n\n"
@@ -50,23 +65,33 @@ def wiki_path(root: Path | None = None) -> Path:
     return (root or data_root()) / "wiki" / "options.md"
 
 
-def ensure(root: Path | None = None) -> Path:
-    """The personal copy, creating it from DEFAULT_OPTIONS if this is the
-    first time anything has asked for it."""
+def ensure(root: Path | None = None, transcripts_root: Path | None = None) -> Path:
+    """The personal copy, creating it from DEFAULT_OPTIONS -- opened with a
+    ``bootstrap_note()`` of what recent history already shows, when there
+    is any -- if this is the first time anything has asked for it.
+
+    ``transcripts_root`` exists so tests (and only tests) can point the
+    bootstrap scan at an empty directory instead of this machine's real
+    ``~/.claude/projects/`` -- production code never passes it.
+    """
     path = wiki_path(root)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(render(DEFAULT_OPTIONS), encoding="utf-8")
+        text = render(DEFAULT_OPTIONS)
+        note = bootstrap_note(transcripts_root=transcripts_root)
+        if note:
+            text = text.replace("## 목차", note + "## 목차", 1)
+        path.write_text(text, encoding="utf-8")
     return path
 
 
-def load(root: Path | None = None) -> dict[str, tuple[Option, ...]]:
+def load(root: Path | None = None, transcripts_root: Path | None = None) -> dict[str, tuple[Option, ...]]:
     """Never raises, never returns an incomplete table: a task whose section
     is missing, unparseable, or missing one of its four option keys (a
     single hand-edited row broken by a typo, say) falls back to
     DEFAULT_OPTIONS for that task alone -- never a three-option "four-option
     gate", and never the whole table just because one section had a typo."""
-    path = ensure(root)
+    path = ensure(root, transcripts_root)
     try:
         parsed = parse(path.read_text(encoding="utf-8"))
     except OSError:
@@ -100,6 +125,53 @@ def render(table: Mapping[str, Sequence[Option]]) -> str:
         for option in options:
             lines.append(f"| {option.key} | {option.label} | {option.stars} | {option.rule} |")
         lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def bootstrap_note(months: int = BOOTSTRAP_MONTHS, transcripts_root: Path | None = None) -> str:
+    """The top real habits found in the last ``months`` of local
+    transcripts, as a markdown section -- or "" when there is nothing to
+    say (a genuinely new machine with no history, or the analysis fails
+    for any reason at all). Never raises: this runs from ``ensure()``,
+    which a hook calls on every prompt, and seeding a file must never be
+    allowed to break someone's turn.
+
+    ``transcripts_root`` defaults to the real ``~/.claude/projects/``
+    (``transcript.transcript_root()``); pass an empty directory in tests
+    so this never reads a real machine's actual history.
+    """
+    try:
+        from collections import Counter
+        from datetime import datetime, timedelta, timezone
+
+        from .signals import CODES, detect
+        from .transcript import read_all_turns
+
+        since = datetime.now(timezone.utc) - timedelta(days=30 * months)
+        turns = read_all_turns(transcripts_root, since=since)
+        if not turns:
+            return ""
+        counts = Counter(f.code for f in detect(turns))
+        top = counts.most_common(3)
+        if not top:
+            return ""
+    except Exception:
+        return ""
+
+    lines = [
+        "## 설치 전 데이터로 만든 초기 상태",
+        "",
+        f"빈 기본값이 아니라, 최근 {months}개월 실제 작업 기록을 보고 시작합니다.",
+        "",
+    ]
+    lines += [f"- {CODES.get(code, code)} — {count}회" for code, count in top]
+    lines += [
+        "",
+        "실행 전 확인(게이트) 판정 이력(`ai_saver_cli.py wiki stats`)은 아직 없습니다 -- "
+        "게이트를 실시간으로 켜고 판정이 쌓이면 월간 리뷰가 이어서 채웁니다. 지금은 실제 "
+        "작업 습관만 반영했고, 옵션 문구 자체는 아직 손대지 않았습니다.",
+        "",
+    ]
     return "\n".join(lines) + "\n"
 
 

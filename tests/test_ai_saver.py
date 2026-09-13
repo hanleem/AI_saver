@@ -19,7 +19,7 @@ from ai_saver.gate import DEFAULT_OPTIONS, Option, assess  # noqa: E402
 from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
 from ai_saver.profile import Profile  # noqa: E402
 from ai_saver.promotion import (  # noqa: E402
-    PURPOSE, Skill, group_by_command, render_skill, skills_root,
+    PURPOSE, Skill, group_by_command, live_commands, render_skill, skills_root, usage_counts,
 )
 from ai_saver.report import SKILL_MIN, habit_counts, render_month  # noqa: E402
 from ai_saver.signals import detect  # noqa: E402
@@ -111,6 +111,19 @@ class TranscriptTest(unittest.TestCase):
         turn, = read_turns(path)
         self.assertEqual(turn.choices, ["A"])
 
+    def test_active_skill_is_captured_from_attribution_field(self):
+        path = _write([
+            _prompt("p1", "고쳐줘", "u1"),
+            {**_assistant("r1", [{"type": "text", "text": "네"}]), "attributionSkill": "focus-file"},
+        ])
+        turn, = read_turns(path)
+        self.assertEqual(turn.skills_used, {"focus-file"})
+
+    def test_no_attribution_field_means_no_skill(self):
+        path = _write([_prompt("p1", "고쳐줘", "u1"), _assistant("r1", [{"type": "text", "text": "네"}])])
+        turn, = read_turns(path)
+        self.assertEqual(turn.skills_used, set())
+
     def test_malformed_lines_are_survivable(self):
         path = _write([_prompt("p1", "고쳐줘 이것 좀 전체적으로", "u1")])
         with path.open("a", encoding="utf-8") as handle:
@@ -169,11 +182,14 @@ class GateTest(unittest.TestCase):
 class OptionWikiTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
+        # Empty on purpose: keeps every ensure()/load() call in this class from
+        # scanning this machine's real ~/.claude/projects/ history.
+        self.transcripts_root = Path(tempfile.mkdtemp())
 
     def test_first_use_seeds_the_file_from_defaults(self):
-        path = optionwiki.ensure(self.root)
+        path = optionwiki.ensure(self.root, self.transcripts_root)
         self.assertTrue(path.exists())
-        self.assertEqual(optionwiki.load(self.root), DEFAULT_OPTIONS)
+        self.assertEqual(optionwiki.load(self.root, self.transcripts_root), DEFAULT_OPTIONS)
 
     def test_render_then_parse_round_trips_exactly(self):
         text = optionwiki.render(DEFAULT_OPTIONS)
@@ -188,39 +204,73 @@ class OptionWikiTest(unittest.TestCase):
             self.assertLess(text.index(f"[{task}](#{task})"), text.index(f"## {task}"))
 
     def test_editing_one_task_leaves_the_others_on_defaults(self):
-        path = optionwiki.ensure(self.root)
+        path = optionwiki.ensure(self.root, self.transcripts_root)
         text = path.read_text(encoding="utf-8").replace(
             "지정한 파일만 고치기", "새 문구")
         path.write_text(text, encoding="utf-8")
 
-        table = optionwiki.load(self.root)
+        table = optionwiki.load(self.root, self.transcripts_root)
         self.assertEqual(table["code"][0].label, "새 문구")
         self.assertEqual(table["design"], DEFAULT_OPTIONS["design"])
 
     def test_one_broken_row_falls_back_for_that_task_only_not_a_three_option_gate(self):
         """Never let a four-option gate quietly become a three-option one --
         but a typo in 'code' must not also reset the untouched 'design' section."""
-        path = optionwiki.ensure(self.root)
+        path = optionwiki.ensure(self.root, self.transcripts_root)
         text = path.read_text(encoding="utf-8").replace(
             "| A | 지정한 파일만 고치기 | ★ | 사용자가 지목한 파일만 읽고 수정한다. 다른 파일은 열지 않는다. |",
             "그냥 사람이 아무렇게나 쓴 문장, 표 형식이 아님")
         path.write_text(text, encoding="utf-8")
 
-        table = optionwiki.load(self.root)
+        table = optionwiki.load(self.root, self.transcripts_root)
         self.assertEqual(table["code"], DEFAULT_OPTIONS["code"])  # whole task reverts, not 3/4 of it
         self.assertEqual(table["design"], DEFAULT_OPTIONS["design"])  # untouched task unaffected
 
     def test_completely_broken_file_falls_back_entirely(self):
-        path = optionwiki.ensure(self.root)
+        path = optionwiki.ensure(self.root, self.transcripts_root)
         path.write_text("완전히 망가진 내용, 표도 없고 헤딩도 없음", encoding="utf-8")
-        self.assertEqual(optionwiki.load(self.root), DEFAULT_OPTIONS)
+        self.assertEqual(optionwiki.load(self.root, self.transcripts_root), DEFAULT_OPTIONS)
 
     def test_reset_discards_manual_edits(self):
-        path = optionwiki.ensure(self.root)
+        path = optionwiki.ensure(self.root, self.transcripts_root)
         path.write_text(path.read_text(encoding="utf-8").replace("★", "★★★★★★★★★★"),
                         encoding="utf-8")
         optionwiki.reset(self.root)
-        self.assertEqual(optionwiki.load(self.root), DEFAULT_OPTIONS)
+        self.assertEqual(optionwiki.load(self.root, self.transcripts_root), DEFAULT_OPTIONS)
+
+    def _seed_rediscovery_history(self) -> None:
+        """A tiny real-shaped transcript with the same file read three times,
+        written straight into self.transcripts_root."""
+        path = self.transcripts_root / "proj" / "s1.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = [_prompt("p1", "고쳐줘", "u1")]
+        lines += [_assistant("r1", [_tool("Read", {"file_path": "a.py"}, f"t{i}")]) for i in range(3)]
+        with path.open("w", encoding="utf-8") as handle:
+            for line in lines:
+                handle.write(json.dumps(line) + "\n")
+
+    def test_bootstrap_note_is_empty_with_no_history(self):
+        self.assertEqual(optionwiki.bootstrap_note(transcripts_root=self.transcripts_root), "")
+
+    def test_bootstrap_note_summarises_real_habits(self):
+        self._seed_rediscovery_history()
+        note = optionwiki.bootstrap_note(transcripts_root=self.transcripts_root)
+        self.assertIn("같은 파일을 여러 번 다시 읽음", note)  # CODES["REDISCOVERY"]
+        self.assertIn("1회", note)  # one turn exhibited the pattern -> one finding
+
+    def test_first_run_wiki_opens_with_the_bootstrap_note_when_history_exists(self):
+        self._seed_rediscovery_history()
+        path = optionwiki.ensure(self.root, self.transcripts_root)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("설치 전 데이터로 만든 초기 상태", text)
+        self.assertLess(text.index("설치 전 데이터로 만든 초기 상태"), text.index("## 목차"))
+
+    def test_bootstrap_never_rewrites_option_wording_itself(self):
+        """The note states facts; deciding whether to change A/B/C/D wording
+        stays a judgment call for whoever reads the note."""
+        self._seed_rediscovery_history()
+        table = optionwiki.load(self.root, self.transcripts_root)
+        self.assertEqual(table, DEFAULT_OPTIONS)
 
 
 def _turn(prompt_id: str, prompt: str, calls: list[ToolCall], cost_calls: int = 1) -> Turn:
@@ -489,6 +539,19 @@ def _turns_at(code: str, count: int, days_ago: int) -> list[dict]:
     return records
 
 
+def _usage_at(command: str, count: int, days_ago: int) -> list[dict]:
+    """Turns where ``command`` was actually invoked (attributionSkill),
+    unrelated to any detector signal."""
+    ts = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat(timespec="seconds")
+    records = []
+    for i in range(count):
+        r = turn_record(_turn(f"use-{command}-{days_ago}-{i}", "x", []))
+        r["ts"] = ts
+        r["skills"] = [command]
+        records.append(r)
+    return records
+
+
 class EffectTest(unittest.TestCase):
     def test_fresh_promotion_is_too_soon_to_judge(self):
         records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=2)]
@@ -526,6 +589,32 @@ class EffectTest(unittest.TestCase):
 
     def test_no_promotions_renders_nothing(self):
         self.assertEqual(effect.render(effect.evaluate([])), "")
+
+    def test_barely_used_command_is_flagged_regardless_of_habit_rate(self):
+        """A command nobody types is dead weight even if the habit happened
+        to improve for some unrelated reason -- WORKING must not shadow this."""
+        records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=40)]
+        records += _turns_at("REDISCOVERY", 1, days_ago=10)  # habit rate looks great
+        records += _usage_at("focus-file", 1, days_ago=35)   # but almost never invoked
+        result, = effect.evaluate(records)
+        self.assertEqual(result.verdict, "UNUSED")
+        self.assertIn("지워도 됩니다", result.recommendation)
+
+    def test_actually_used_command_is_not_flagged_as_unused(self):
+        records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=40)]
+        records += _turns_at("REDISCOVERY", 1, days_ago=10)
+        records += _usage_at("focus-file", 5, days_ago=35)
+        result, = effect.evaluate(records)
+        self.assertNotEqual(result.verdict, "UNUSED")
+
+    def test_usage_before_the_observation_window_does_not_count(self):
+        """Only usage counted while judgment is even permitted (<30 days
+        old) is checked with a 0/1 threshold; the days_since gate for UNUSED
+        itself already prevents judging too early."""
+        records = [_promo("focus-file", ["REDISCOVERY"], baseline_count=30, days_ago=5)]
+        records += _usage_at("focus-file", 5, days_ago=4)
+        result, = effect.evaluate(records)
+        self.assertEqual(result.verdict, "TOO_SOON")  # under 14 days regardless of usage
 
 
 class PromotionTest(unittest.TestCase):
@@ -614,6 +703,25 @@ class PromotionTest(unittest.TestCase):
         groups = group_by_command(["REDISCOVERY", "SCOPE_BLOWUP", "VAGUE_SCOPE"])
         self.assertEqual(set(groups), {"focus-file", "scoped-edit"})
         self.assertEqual(set(groups["scoped-edit"]), {"SCOPE_BLOWUP", "VAGUE_SCOPE"})
+
+    def test_usage_counts_reads_the_transcripts_own_skill_field(self):
+        records = _usage_at("focus-file", 3, days_ago=1) + _usage_at("quick-test", 1, days_ago=1)
+        counts = usage_counts(records)
+        self.assertEqual(counts["focus-file"], 3)
+        self.assertEqual(counts["quick-test"], 1)
+        self.assertEqual(counts["never-used"], 0)
+
+    def test_usage_counts_ignores_non_turn_records(self):
+        records = [{"kind": "gate", "skills": ["focus-file"]}]
+        self.assertEqual(usage_counts(records)["focus-file"], 0)
+
+    def test_live_commands_lists_what_actually_exists_on_disk(self):
+        root = Path(tempfile.mkdtemp())
+        render_skill(["REDISCOVERY"], {"REDISCOVERY": 10}).write(root)
+        self.assertEqual(live_commands(root), {"focus-file"})
+
+    def test_live_commands_empty_when_nothing_promoted_yet(self):
+        self.assertEqual(live_commands(Path(tempfile.mkdtemp())), set())
 
 
 class HabitCountsTest(unittest.TestCase):
