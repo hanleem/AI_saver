@@ -2,12 +2,20 @@
 
 Interface
 ---------
-    assess(prompt, profile) -> Verdict
+    assess(prompt, profile, options=None) -> Verdict
 
 One call, no I/O, no model call, no network. The whole point of this module
 is that deciding *whether* a request is expensive must itself be free --
 if a model had to judge every prompt, the judging would cost more than the
 waste it prevents.
+
+The four-option wording is a parameter, not a constant: `options` maps task
+name to its four `Option`s and defaults to `DEFAULT_OPTIONS` (this module's
+own hardcoded table) when omitted, so nothing changes for a caller that
+never heard of the wiki. A caller that wants the *editable* wording --
+every real hook does -- loads `optionwiki.load()` first and passes the
+result in here. That load is where the disk read lives; this function
+still never touches disk itself.
 
 The rendering of the four options is left to the caller (the agent shows
 them with its own question UI); this module only decides what to offer and
@@ -18,11 +26,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from .profile import Profile
 
-__all__ = ["Option", "Verdict", "assess", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"]
+__all__ = ["Option", "Verdict", "assess", "DEFAULT_OPTIONS", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"]
 
 LOW, MEDIUM, HIGH, VERY_HIGH = "LOW", "MEDIUM", "HIGH", "VERY_HIGH"
 
@@ -65,11 +73,13 @@ class Verdict:
         return "\n".join(lines)
 
 
-def assess(prompt: str, profile: Profile) -> Verdict:
+def assess(prompt: str, profile: Profile,
+          options: Mapping[str, tuple[Option, ...]] | None = None) -> Verdict:
     text = prompt.strip()
     score, reasons = _score(text)
     task = _classify(text)
-    options = _OPTIONS[task]
+    table = options or DEFAULT_OPTIONS
+    task_options = table.get(task) or DEFAULT_OPTIONS[task]
     level = _level(score, profile)
     recommended, why = _recommend(task, text, level)
     return Verdict(
@@ -77,7 +87,7 @@ def assess(prompt: str, profile: Profile) -> Verdict:
         score=score,
         task=task,
         reasons=tuple(reasons) or ("범위가 넓음",),
-        options=options,
+        options=task_options,
         recommended=recommended,
         why=why,
     )
@@ -167,7 +177,11 @@ def _opts(*rows: tuple[str, str, str, str]) -> tuple[Option, ...]:
     return tuple(Option(*row) for row in rows)
 
 
-_OPTIONS: dict[str, tuple[Option, ...]] = {
+#: The built-in wording, used whenever no wiki-loaded table is supplied.
+#: ``optionwiki.py`` treats this dict as the seed it writes out as the
+#: first wiki file, so there is exactly one place these words are typed --
+#: not two copies that can silently drift apart.
+DEFAULT_OPTIONS: dict[str, tuple[Option, ...]] = {
     "code": _opts(
         ("A", "지정한 파일만 고치기", "★", "사용자가 지목한 파일만 읽고 수정한다. 다른 파일은 열지 않는다."),
         ("B", "관련 기능까지 고치기", "★★", "해당 기능이 걸친 파일까지만 읽고 수정한다. 전체 탐색은 하지 않는다."),

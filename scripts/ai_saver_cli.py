@@ -8,6 +8,9 @@
     python ai_saver_cli.py status                 what AI_saver knows so far
     python ai_saver_cli.py promote --list         which habits qualify
     python ai_saver_cli.py promote focus-file     write the skill -- makes /focus-file real
+    python ai_saver_cli.py wiki                   show the editable 4-option wording
+    python ai_saver_cli.py wiki stats             recommendation-vs-choice numbers, per task
+    python ai_saver_cli.py wiki reset             put the wording back to defaults
 
 backfill is the one to run first: the transcripts are already on disk, so a
 baseline exists before the tool changes anything. Without that baseline
@@ -18,12 +21,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai_saver import effect  # noqa: E402
+from ai_saver import effect, optionwiki  # noqa: E402
 from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
 from ai_saver.profile import Profile, data_root  # noqa: E402
 from ai_saver.promotion import PURPOSE, group_by_command, render_skill, skills_root  # noqa: E402
@@ -148,6 +152,41 @@ def promote(args) -> int:
     return 0
 
 
+def wiki(args) -> int:
+    if args.action == "reset":
+        path = optionwiki.reset(Path(args.root) if args.root else None)
+        print(f"기본값으로 되돌렸습니다: {path}")
+        return 0
+
+    if args.action == "stats":
+        ledger = Ledger(profile=Profile.load())
+        gates = [r for r in ledger.all_records() if r.get("kind") == "gate" and r.get("task")]
+        if not gates:
+            print("아직 판정 기록이 없습니다.")
+            return 0
+        by_task: dict[str, list[dict]] = {}
+        for record in gates:
+            by_task.setdefault(record["task"], []).append(record)
+        for task in sorted(by_task):
+            records = by_task[task]
+            recommended = Counter(r.get("recommended") for r in records if r.get("recommended"))
+            chosen = Counter(r.get("choice") for r in records if r.get("choice"))
+            answered = sum(chosen.values())
+            print(f"[{task}] 판정 {len(records)}건, 답변 {answered}건")
+            print(f"  추천 분포   {dict(sorted(recommended.items()))}")
+            if answered:
+                mismatch = sum(1 for r in records if r.get("choice") and r.get("choice") != r.get("recommended"))
+                print(f"  실제 선택   {dict(sorted(chosen.items()))}  "
+                      f"(추천과 다르게 고른 비율 {mismatch / answered:.0%})")
+        print(f"\n위키 파일: {optionwiki.wiki_path()}")
+        print("추천과 실제 선택이 자주 어긋나는 유형이 있으면, 그 유형의 문구나 별점을 위 파일에서 고치세요.")
+        return 0
+
+    path = optionwiki.ensure(Path(args.root) if args.root else None)
+    print(path.read_text(encoding="utf-8"))
+    return 0
+
+
 def status(args) -> int:
     profile = Profile.load()
     ledger = Ledger(profile=profile)
@@ -197,6 +236,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="기준 미달이어도 만들기")
     p.add_argument("--root", default="", help="테스트용: 다른 폴더에 쓰기")
     p.set_defaults(func=promote)
+
+    p = subparsers.add_parser("wiki", help="4지선다 문구 위키 -- 보기/통계/초기화")
+    p.add_argument("action", nargs="?", default="show", choices=["show", "stats", "reset"])
+    p.add_argument("--root", default="", help="테스트용: 다른 폴더 사용")
+    p.set_defaults(func=wiki)
 
     args = parser.parse_args(argv)
     return args.func(args)

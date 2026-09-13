@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai_saver import effect  # noqa: E402
-from ai_saver.gate import assess  # noqa: E402
+from ai_saver import effect, optionwiki  # noqa: E402
+from ai_saver.gate import DEFAULT_OPTIONS, Option, assess  # noqa: E402
 from ai_saver.ledger import Ledger, promotion_record, turn_record  # noqa: E402
 from ai_saver.profile import Profile  # noqa: E402
 from ai_saver.promotion import (  # noqa: E402
@@ -150,6 +150,78 @@ class GateTest(unittest.TestCase):
         self.assertNotIn("AskUserQuestion", context)  # Claude-only tool name; text must stay tool-agnostic
         self.assertIn(verdict.recommended, context)
 
+    def test_omitting_options_keeps_assess_pure_and_unchanged(self):
+        """No caller that never heard of the wiki should see any difference --
+        this is the whole reason assess() stays disk-free by default."""
+        without = assess("전체 앱 디자인 다 예쁘게 바꿔줘", self.profile)
+        with_default = assess("전체 앱 디자인 다 예쁘게 바꿔줘", self.profile, options=DEFAULT_OPTIONS)
+        self.assertEqual(without.options, with_default.options)
+
+    def test_a_wiki_edit_actually_changes_what_the_gate_shows(self):
+        """The end-to-end point of the wiki: edit the file, no redeploy,
+        the very next assess() call reflects it."""
+        edited = dict(DEFAULT_OPTIONS)
+        edited["code"] = (Option("A", "개정판 문구", "★", "규칙"),) + DEFAULT_OPTIONS["code"][1:]
+        verdict = assess("전체 코드 다 정리해줘", self.profile, options=edited)
+        self.assertEqual(verdict.options[0].label, "개정판 문구")
+
+
+class OptionWikiTest(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+
+    def test_first_use_seeds_the_file_from_defaults(self):
+        path = optionwiki.ensure(self.root)
+        self.assertTrue(path.exists())
+        self.assertEqual(optionwiki.load(self.root), DEFAULT_OPTIONS)
+
+    def test_render_then_parse_round_trips_exactly(self):
+        text = optionwiki.render(DEFAULT_OPTIONS)
+        self.assertEqual(optionwiki.parse(text), DEFAULT_OPTIONS)
+
+    def test_table_of_contents_lists_every_task_up_front(self):
+        text = optionwiki.render(DEFAULT_OPTIONS)
+        toc_position = text.index("## 목차")
+        for task in DEFAULT_OPTIONS:
+            self.assertIn(f"[{task}](#{task})", text)
+            self.assertGreater(text.index(f"[{task}](#{task})"), toc_position)
+            self.assertLess(text.index(f"[{task}](#{task})"), text.index(f"## {task}"))
+
+    def test_editing_one_task_leaves_the_others_on_defaults(self):
+        path = optionwiki.ensure(self.root)
+        text = path.read_text(encoding="utf-8").replace(
+            "지정한 파일만 고치기", "새 문구")
+        path.write_text(text, encoding="utf-8")
+
+        table = optionwiki.load(self.root)
+        self.assertEqual(table["code"][0].label, "새 문구")
+        self.assertEqual(table["design"], DEFAULT_OPTIONS["design"])
+
+    def test_one_broken_row_falls_back_for_that_task_only_not_a_three_option_gate(self):
+        """Never let a four-option gate quietly become a three-option one --
+        but a typo in 'code' must not also reset the untouched 'design' section."""
+        path = optionwiki.ensure(self.root)
+        text = path.read_text(encoding="utf-8").replace(
+            "| A | 지정한 파일만 고치기 | ★ | 사용자가 지목한 파일만 읽고 수정한다. 다른 파일은 열지 않는다. |",
+            "그냥 사람이 아무렇게나 쓴 문장, 표 형식이 아님")
+        path.write_text(text, encoding="utf-8")
+
+        table = optionwiki.load(self.root)
+        self.assertEqual(table["code"], DEFAULT_OPTIONS["code"])  # whole task reverts, not 3/4 of it
+        self.assertEqual(table["design"], DEFAULT_OPTIONS["design"])  # untouched task unaffected
+
+    def test_completely_broken_file_falls_back_entirely(self):
+        path = optionwiki.ensure(self.root)
+        path.write_text("완전히 망가진 내용, 표도 없고 헤딩도 없음", encoding="utf-8")
+        self.assertEqual(optionwiki.load(self.root), DEFAULT_OPTIONS)
+
+    def test_reset_discards_manual_edits(self):
+        path = optionwiki.ensure(self.root)
+        path.write_text(path.read_text(encoding="utf-8").replace("★", "★★★★★★★★★★"),
+                        encoding="utf-8")
+        optionwiki.reset(self.root)
+        self.assertEqual(optionwiki.load(self.root), DEFAULT_OPTIONS)
+
 
 def _turn(prompt_id: str, prompt: str, calls: list[ToolCall], cost_calls: int = 1) -> Turn:
     from ai_saver.transcript import TokenUse
@@ -266,6 +338,52 @@ class CodexHookTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(self.script)], input="not json",
                                 capture_output=True, text=True, env=self.env)
         self.assertEqual(result.returncode, 0)
+
+
+class WikiCliTest(unittest.TestCase):
+    """The actual command a person types, run as a real subprocess."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+        self.wiki_root = Path(tempfile.mkdtemp())
+        self.cli = Path(__file__).resolve().parent.parent / "scripts" / "ai_saver_cli.py"
+        self.env = {**os.environ, "AI_SAVER_HOME": str(self.home), "PYTHONIOENCODING": "utf-8"}
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(self.cli), *args],
+                              capture_output=True, text=True, encoding="utf-8", env=self.env)
+
+    def test_show_seeds_and_prints_the_table_of_contents(self):
+        result = self._run("wiki", "--root", str(self.wiki_root))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("## 목차", result.stdout)
+        self.assertIn("[code](#code)", result.stdout)
+
+    def test_reset_restores_a_manually_edited_file(self):
+        self._run("wiki", "--root", str(self.wiki_root))  # seed it first
+        wiki_file = self.wiki_root / "wiki" / "options.md"
+        wiki_file.write_text("사람이 손으로 다 지우고 새로 씀", encoding="utf-8")
+
+        result = self._run("wiki", "reset", "--root", str(self.wiki_root))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("## 목차", wiki_file.read_text(encoding="utf-8"))
+
+    def test_stats_without_data_does_not_crash(self):
+        result = self._run("wiki", "stats")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("아직", result.stdout)
+
+    def test_stats_shows_recommendation_vs_choice_by_task(self):
+        records = [
+            {"v": 1, "kind": "gate", "id": "p1", "ts": "2026-09-01T00:00:00+00:00",
+             "task": "design", "recommended": "B", "choice": "C"},
+            {"v": 1, "kind": "gate", "id": "p2", "ts": "2026-09-02T00:00:00+00:00",
+             "task": "design", "recommended": "B", "choice": "B"},
+        ]
+        Ledger(root=self.home, profile=Profile()).append(records)
+        result = self._run("wiki", "stats")
+        self.assertIn("design", result.stdout)
+        self.assertIn("50%", result.stdout)  # 1 of 2 answers disagreed with the recommendation
 
 
 class PromoteCliTest(unittest.TestCase):

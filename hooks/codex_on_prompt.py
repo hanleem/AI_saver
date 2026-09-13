@@ -40,12 +40,14 @@ def main() -> None:
     if len(prompt) < MIN_LENGTH:
         return
 
+    from ai_saver import optionwiki
     from ai_saver.gate import assess
     from ai_saver.ledger import Ledger, gate_record
     from ai_saver.profile import Profile
 
     profile = Profile.load()
-    verdict = assess(prompt, profile)
+    # Same personal wiki as the Claude Code hook -- editing it once improves both.
+    verdict = assess(prompt, profile, options=optionwiki.load())
 
     try:
         Ledger(profile=profile).append([

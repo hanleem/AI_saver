@@ -29,12 +29,14 @@ def main() -> None:
     if len(prompt) < MIN_LENGTH or prompt.startswith("/"):
         return
 
+    from ai_saver import optionwiki
     from ai_saver.gate import assess
     from ai_saver.ledger import Ledger, gate_record
     from ai_saver.profile import Profile
 
     profile = Profile.load()
-    verdict = assess(prompt, profile)
+    # The wiki holds the editable wording; assess() itself never touches disk.
+    verdict = assess(prompt, profile, options=optionwiki.load())
 
     # Recorded for every prompt, including the quiet ones: the score
     # distribution is what keeps the interruption rate calibrated.

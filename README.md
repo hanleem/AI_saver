@@ -115,6 +115,7 @@ python .../ai_saver_cli.py calibrate       # 개입 빈도 조정
 python .../ai_saver_cli.py gate on|off     # 실행 전 확인 켜기/끄기
 python .../ai_saver_cli.py promote --list  # 승격 후보 보기
 python .../ai_saver_cli.py promote <이름>  # 실제 SKILL.md 생성 -- 그 즉시 /<이름> 이 뜬다
+python .../ai_saver_cli.py wiki             # 4지선다 문구 보기/통계/초기화
 ```
 
 ## 적용 범위 — 전역, 단 처음 2주는 관찰만
@@ -137,7 +138,8 @@ python .../ai_saver_cli.py gate on
 ~/.claude/ai-saver/
 ├─ ledger/2026-09.jsonl    기계가 쓰는 원장
 ├─ reports/2026-09.md      사람이 읽는 리포트
-└─ profile.json            기준점·모드
+├─ profile.json            기준점·모드
+└─ wiki/options.md         4지선다 문구 (편집 가능, 아래 설명)
 ```
 
 `AI_SAVER_HOME` 환경변수로 옮길 수 있습니다.
@@ -146,6 +148,25 @@ python .../ai_saver_cli.py gate on
 - **전송 코드가 아예 없습니다.** 이 저장소에는 `urllib`·`requests`·소켓을 쓰는 줄이 한 줄도 없습니다. 파일을 읽고 쓰는 것이 전부입니다.
 - 원장에는 작업 폴더 경로가 남습니다. 로컬에만 있지만, **리포트는 폴더 이름만** 보여줍니다 — 리포트는 남에게 보여줄 가능성이 있는 유일한 파일이기 때문입니다.
 - 저장 위치는 저장소 바깥(`~/.claude/ai-saver/`)입니다. `.gitignore`에도 막아 두었습니다.
+
+## 4지선다는 코드가 아니라 위키다 — 매달 똑똑해진다
+
+`gate.py`에는 문구가 하나도 하드코딩돼 있지 않습니다. 기본 문구는 있지만, 처음 쓰는
+순간 `~/.claude/ai-saver/wiki/options.md`에 그대로 풀려 나와서, **이 파일을 고치면
+코드를 배포하지 않고도 다음 프롬프트부터 바로 반영됩니다.**
+
+```
+python .../ai_saver_cli.py wiki          # 지금 문구 보기 (목차 포함)
+python .../ai_saver_cli.py wiki stats    # 유형별 추천-vs-실제선택 숫자
+python .../ai_saver_cli.py wiki reset    # 손댄 걸 후회하면 기본값으로
+```
+
+월간 리뷰(`token-review`)가 `wiki stats`를 보고 "design 유형에서 추천과 다르게 고른
+비율이 유독 높다" 같은 걸 발견하면, 그 유형의 문구·별점을 직접 고칩니다. 판단은
+사람(또는 리뷰를 진행하는 세션)이 하고, 계산만 스크립트가 합니다 — 이 프로젝트
+전체의 원칙과 같습니다.
+
+한 파일을 Claude Code와 Codex가 같이 씁니다. 어느 쪽에서 고치든 둘 다 좋아집니다.
 
 ## 자기 교정
 
@@ -163,7 +184,7 @@ python .../ai_saver_cli.py gate on
 ## 개발
 
 ```bash
-python tests/test_ai_saver.py     # 47 tests
+python tests/test_ai_saver.py     # 60 tests
 ```
 
 MIT.
